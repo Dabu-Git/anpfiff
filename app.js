@@ -45,21 +45,98 @@ const VFV = ['Vorarlberger Fußballverband', 'https://www.vfv.at/'];
 const SFV = ['Schweizerischer Fussballverband', 'https://www.football.ch/'];
 const REGIONAL_LEAGUES = [
   { key: 'regional/rlw', name: 'Regionalliga West', region: 'Vorarlberg & Tirol', flag: '🇦🇹', tier: 3,
+    source: { type: 'wiki', page: () => `Österreichische Fußballmeisterschaft ${seasonStr()}`, heading: () => /^===\s*Regionalliga West\s*===/m },
     links: [['Tabelle & Spiele', `${SW}/austria/regionalliga-west/standings/`], ['Spielberichte (VOL.AT)', 'https://www.vol.at/themen/regionalliga']] },
   { key: 'regional/elite', name: 'Eliteliga Vorarlberg', region: 'Vorarlberg', flag: '🇦🇹', tier: 4,
+    source: { type: 'wiki', page: () => 'Eliteliga Vorarlberg', heading: () => new RegExp(`^==+\\s*Tabelle\\s*${seasonStr().replace('/', '\\/')}\\s*==+`, 'm') },
     links: [['Tabelle & Spiele', `${SW}/austria/regionalliga-west-vorarlberg/standings/`]] },
   { key: 'regional/vbgl', name: 'Vorarlbergliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 5,
     links: [['Tabelle & Spiele', `${SW}/austria/vorarlberg/standings/`]] },
-  { key: 'regional/ll', name: 'Landesliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 6, links: [] },
+  { key: 'regional/ll', name: 'Landesliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 6, links: [],
+    source: { type: 'wiki', page: () => 'Landesliga (Vorarlberg)', heading: () => new RegExp(`^==+\\s*Tabelle\\s*${seasonStr().replace('/', '\\/')}\\s*==+`, 'm') } },
   { key: 'regional/1lk', name: '1. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 7, links: [] },
   { key: 'regional/2lk', name: '2. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 8, links: [] },
   { key: 'regional/3lk', name: '3. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 9, links: [] },
   { key: 'regional/4lk', name: '4. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 10, links: [] },
   { key: 'regional/5lko', name: '5. Landesklasse Oberland', region: 'Vorarlberg', flag: '🇦🇹', tier: 11, links: [] },
   { key: 'regional/5lku', name: '5. Landesklasse Unterland', region: 'Vorarlberg', flag: '🇦🇹', tier: 11, links: [] },
-  { key: 'regional/ch2lr', name: '2. Liga regional', region: 'Ostschweiz (OFV)', flag: '🇨🇭', tier: 6, links: [] },
+  { key: 'regional/ch2lr', name: '2. Liga regional', region: 'Ostschweiz (OFV) · Gruppe 1', flag: '🇨🇭', tier: 6,
+    links: [['Spiele & Resultate (OFV)', 'https://matchcenter.ofv.swiss/']], source: { type: 'json', url: 'data/ch2lr.json' } },
 ];
 const regionalByKey = Object.fromEntries(REGIONAL_LEAGUES.map(l => [l.key, l]));
+
+// Saison im Format 2026/27 (Wechsel im Juli)
+function seasonStr(d = new Date()) {
+  const y = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}/${String((y + 1) % 100).padStart(2, '0')}`;
+}
+// Vereinsname auf den Kern reduzieren, damit "FC Dornbirn 1913" und "FC Dornbirn" zusammenpassen
+function teamCore(name) {
+  return norm(name).replace(/\b(fc|sc|sv|vfb|scr|sk|svg|fk|usv|asv|tsv|bw|spg|sg|wsg|us|ac|cs|sk)\b/g, ' ')
+    .replace(/\b\d+\b/g, ' ').replace(/[^a-z]+/g, ' ').trim();
+}
+function sameTeam(a, b) {
+  const x = teamCore(a), y = teamCore(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [s1, l1] = x.length <= y.length ? [x, y] : [y, x];
+  return s1.length >= 4 && (` ${l1} `).includes(` ${s1} `);
+}
+function parseWikiRow(raw) {
+  let t = raw.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2').replace(/\[\[([^\]]*)\]\]/g, '$1')
+    .replace(/<ref[^>]*\/>/g, '').replace(/<ref[\s\S]*?<\/ref>/g, '').replace(/'''?/g, '');
+  const p = {};
+  for (const m of t.matchAll(/\|\s*([A-Za-zÄÖÜäöü]+)\s*=\s*([^|]*)/g)) p[m[1]] = m[2].trim();
+  if (!p.Verein) return null;
+  const n = k => parseInt(p[k], 10) || 0;
+  const w = n('S'), d = n('U'), l = n('N');
+  return { rank: n('Rang'), team: p.Verein.replace(/\s*\((N|A|M|P|T)\)\s*$/, '').trim(), p: w + d + l, w, d, l,
+    gf: n('ET'), ga: n('GT'), pts: 3 * w + d - n('Abzug'),
+    note: /^ccffcc|^90ee90|^aaffaa/i.test(p.Farbe || '') ? 'up' : /^ffcccc|^ffaaaa/i.test(p.Farbe || '') ? 'down' : '' };
+}
+async function loadRegionalTable(l) {
+  const src = l?.source;
+  if (!src) return null;
+  try {
+    if (src.type === 'json') {
+      const d = await get(src.url, 300000);
+      return d?.rows?.length ? { rows: d.rows, title: d.title, season: d.season, updated: d.updated, source: d.source } : null;
+    }
+    const page = src.page();
+    const url = `https://de.wikipedia.org/w/api.php?action=parse&format=json&origin=*&redirects=1&prop=wikitext|revid&page=${encodeURIComponent(page)}`;
+    const d = await get(url, 600000);
+    const text = d?.parse?.wikitext?.['*'];
+    if (!text) return null;
+    const m = text.match(src.heading());
+    if (!m) return null;
+    const rest = text.slice(m.index + m[0].length);
+    const end = rest.search(/\n==/);
+    const seg = end >= 0 ? rest.slice(0, end) : rest;
+    const rows = [...seg.matchAll(/\{\{Fußballtabelle\/Zeile([^}]*)\}\}/g)].map(x => parseWikiRow(x[1])).filter(Boolean)
+      .sort((a, b) => a.rank - b.rank);
+    if (rows.length < 4) return null;
+    return { rows, season: seasonStr(), source: { label: 'Wikipedia (CC BY-SA 4.0)', url: `https://de.wikipedia.org/wiki/${encodeURIComponent(d.parse.title.replace(/ /g, '_'))}` } };
+  } catch { return null; }
+}
+const findRow = (table, name) => table?.rows?.find(r => sameTeam(r.team, name)) || null;
+function regionalTableHtml(table, leagueKey) {
+  const favs = favorites.filter(f => f.league === leagueKey);
+  const lk = leagueKey.split('/')[1];
+  const rows = table.rows.map(r => {
+    const fav = favs.find(f => sameTeam(f.name, r.team));
+    const known = fav || [...REGIONAL_TEAMS].find(t => t.league === leagueKey && sameTeam(t.name, r.team));
+    const note = r.note === 'up' ? 'style="--note:#22c55e" title="Aufstiegsplatz"' : r.note === 'down' ? 'style="--note:#ef4444" title="Abstiegsplatz"' : '';
+    const diff = r.gf - r.ga;
+    return `<tr class="${fav ? 'me' : ''} ${known ? 'clickable' : ''}" ${known ? `data-href="#/rteam/${lk}/${esc(known.id)}"` : ''}>
+      <td class="rank l" ${note}>${r.rank}</td>
+      <td class="l"><div class="tm"><span class="mini-badge">${esc(initials(r.team))}</span>${esc(r.team)}${fav ? ' <span class="fav-mark">★</span>' : ''}</div></td>
+      <td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf}:${r.ga}</td><td>${diff > 0 ? '+' : ''}${diff}</td><td class="pts">${r.pts}</td></tr>`;
+  }).join('');
+  const upd = table.updated ? ` · Stand ${new Date(table.updated).toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
+  return `<div class="card section"><div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>
+    <th>Sp</th><th>S</th><th>U</th><th>N</th><th>Tore</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="table-source">Quelle: <a href="${esc(table.source?.url || '#')}" target="_blank" rel="noopener">${esc(table.source?.label || '')}</a>${upd}</div></div>`;
+}
 const isRegional = key => String(key || '').startsWith('regional/');
 const leagueName = key => leagueByKey[key]?.name || regionalByKey[key]?.name || key;
 const leagueFlag = key => leagueByKey[key]?.flag || regionalByKey[key]?.flag || '';
@@ -389,6 +466,9 @@ async function viewHome(_, { silent } = {}) {
     Promise.all(leagues.map(l => safe(get(`${API2}/${l}/standings`, 300000)))),
   ]);
   const tableByLeague = Object.fromEntries(leagues.map((l, i) => [l, tables[i]]));
+  const rLeagues = [...new Set(regionalFavs.map(f => f.league))];
+  const rTables = await Promise.all(rLeagues.map(l => loadRegionalTable(regionalByKey[l])));
+  const rTableByLeague = Object.fromEntries(rLeagues.map((l, i) => [l, rTables[i]]));
   if (token !== renderToken) return;
 
   // Live-Daten aus Scoreboards haben Vorrang
@@ -466,7 +546,7 @@ async function viewHome(_, { silent } = {}) {
       <div class="tc-foot">${formDots(events, f.id)}<a class="table-link" href="#/league/${s}/${lg}/${f.id}">${TABLE_ICON}${rankTxt}</a></div>
     </div>`;
   };
-  const regionalCard = f => regionalCardHtml(f);
+  const regionalCard = f => regionalCardHtml(f, rTableByLeague[f.league]);
 
   const liveCard = e => {
     const [s, lg] = e.league.split('/');
@@ -885,11 +965,26 @@ async function viewLeague([sport, lg, teamId], { silent } = {}) {
   if (teamId && !silent) $('tr.me')?.scrollIntoView({ block: 'center' });
 }
 
-function regionalCardHtml(f) {
+function regionalCardHtml(f, table) {
   const l = regionalByKey[f.league];
   const [, lk] = f.league.split('/');
   const links = regionalTeamLinks(f);
   const tableLink = l ? regionalLeagueLinks(l)[0] : null;
+  const row = findRow(table, f.name);
+  if (row) {
+    const above = table.rows.find(r => r.rank === row.rank - 1);
+    return `<div class="card team-card regional" style="--team:${l?.flag === '🇨🇭' ? '#e3342f' : '#19b874'}" data-href="#/rteam/${lk}/${esc(f.id)}">
+    <div class="tc-head"><span class="tc-badge">${esc(initials(f.name))}</span>
+      <div><div class="tc-name">${esc(f.name)}</div><div class="tc-league">${leagueFlag(f.league)} ${esc(l?.name || '')} · ${esc(l?.region || '')}</div></div>
+      ${starBtn(f)}</div>
+    <div class="tc-body">
+      <div class="tc-line"><span class="lbl">Tabelle</span><div class="opp"><span>Platz ${row.rank} von ${table.rows.length}</span></div><span class="val">${row.pts} Pkt</span></div>
+      <div class="tc-line"><span class="lbl">Bilanz</span><div class="opp"><span>${row.w} S · ${row.d} U · ${row.l} N</span></div><span class="val">${row.gf}:${row.ga}</span></div>
+      ${above ? `<div class="tc-line"><span class="lbl">Davor</span><div class="opp"><span>${esc(above.team)}</span></div><span class="val dim">${above.pts - row.pts > 0 ? '+' : ''}${above.pts - row.pts} Pkt</span></div>` : ''}
+    </div>
+    <div class="tc-foot"><span class="dim">${row.p} Spiele</span><a class="table-link" href="#/regional/${lk}">${TABLE_ICON}Platz ${row.rank}</a></div>
+  </div>`;
+  }
   return `<div class="card team-card regional" style="--team:${l?.flag === '🇨🇭' ? '#e3342f' : '#19b874'}" data-href="#/rteam/${lk}/${esc(f.id)}">
     <div class="tc-head"><span class="tc-badge">${esc(initials(f.name))}</span>
       <div><div class="tc-name">${esc(f.name)}</div><div class="tc-league">${leagueFlag(f.league)} ${esc(l?.name || '')} · ${esc(l?.region || '')}</div></div>
@@ -902,39 +997,54 @@ function regionalCardHtml(f) {
   </div>`;
 }
 
-async function viewRegionalLeague([lk]) {
+async function viewRegionalLeague([lk], { silent } = {}) {
   currentView.refresh = 0;
   const l = regionalByKey[`regional/${lk}`];
   if (!l) { location.hash = '#/tables'; return; }
   const teams = [...REGIONAL_TEAMS, ...favorites.filter(f => f.custom)].filter(t => t.league === l.key);
+  const token = renderToken;
+  if (!silent && l.source) $('#app').innerHTML = skeleton();
+  const table = await loadRegionalTable(l);
+  if (token !== renderToken) return;
   $('#app').innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
-    <div class="page-head"><div><h1>${l.flag} ${esc(l.name)}</h1><p>${esc(l.region)} · ${l.tier}. Liga-Stufe</p></div></div>
-    <div class="card info-card">
-      <p>Für diese Liga gibt es keine frei zugängliche Datenschnittstelle – der Verband sperrt automatische Abrufe. Tabelle und Spiele öffnest du deshalb direkt auf der jeweiligen Seite:</p>
+    <div class="page-head"><div><h1>${l.flag} ${esc(l.name)}</h1><p>${esc(l.region)} · ${l.tier}. Liga-Stufe · Saison ${esc(table?.season || seasonStr())}</p></div></div>
+    ${table ? `<section class="section"><div class="section-head"><h2>Tabelle</h2><span class="count">${table.rows.length} Teams</span></div>${regionalTableHtml(table, l.key)}</section>
+      <section class="section"><div class="section-head"><h2>Spiele & mehr</h2></div><div class="card info-card"><div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div></div></section>`
+    : `<div class="card info-card">
+      <p>Für diese Liga gibt es derzeit keine frei zugängliche Tabelle – der ÖFB sperrt automatische Abrufe. Sobald Wikipedia eine Tabelle für ${esc(seasonStr())} führt, erscheint sie hier automatisch. Bis dahin öffnest du Tabelle und Spiele direkt auf der jeweiligen Seite:</p>
       <div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div>
-    </div>
+    </div>`}
     <section class="section"><div class="section-head"><h2>Teams</h2></div>
       ${teams.length ? `<div class="card list-card">${teams.map(t => `<div class="rt-row" data-href="#/rteam/${lk}/${esc(t.id)}"><span class="mini-badge lg">${esc(initials(t.name))}</span><span class="nm">${esc(t.name)}</span>${starBtn(t)}</div>`).join('')}</div>` : ''}
       <div class="card" style="margin-top:14px;padding:18px">${customTeamForm('', l.key)}</div>
     </section>`;
 }
 
-async function viewRegionalTeam([lk, id]) {
+async function viewRegionalTeam([lk, id], { silent } = {}) {
   currentView.refresh = 0;
   const key = `regional/${lk}`;
   const l = regionalByKey[key];
   const t = favorites.find(f => f.league === key && f.id === id) || REGIONAL_TEAMS.find(x => x.league === key && x.id === id);
   if (!t || !l) { location.hash = '#/'; return; }
   const color = l.flag === '🇨🇭' ? '#e3342f' : '#19b874';
+  const token = renderToken;
+  if (!silent && l.source) $('#app').innerHTML = skeleton();
+  const table = await loadRegionalTable(l);
+  if (token !== renderToken) return;
+  const row = findRow(table, t.name);
   $('#app').innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
     <div class="hero" style="--team:${color}"><div class="hero-inner">
       <span class="tc-badge hero-badge">${esc(initials(t.name))}</span>
       <div><h1>${esc(t.name)}</h1><div class="sub"><a class="sub-link" href="#/regional/${lk}">${l.flag} ${esc(l.name)} ›</a> · ${esc(l.region)}</div></div>
-      <div class="hero-actions">${starBtn(t)}</div></div></div>
+      <div class="hero-actions">${starBtn(t)}</div></div>
+      ${row ? `<div class="hero-kpis">${[['Platz', `${row.rank}.`], ['Punkte', row.pts], ['Bilanz', `${row.w}-${row.d}-${row.l}`], ['Tore', `${row.gf}:${row.ga}`], ['Spiele', row.p]]
+        .map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}</div>
+    ${row ? `<section class="section"><div class="section-head"><h2>Tabelle ${esc(l.name)}</h2></div>${regionalTableHtml(table, l.key)}</section>` : ''}
     <div class="card info-card">
-      <p>Tabelle, Spielplan und Ergebnisse dieses Vereins kommen vom Verband bzw. einem Ergebnisdienst und öffnen sich direkt im Browser:</p>
+      <p>${row ? 'Spielplan und Einzelergebnisse öffnest du direkt beim Verband bzw. Ergebnisdienst:' : 'Tabelle, Spielplan und Ergebnisse dieses Vereins kommen vom Verband bzw. einem Ergebnisdienst und öffnen sich direkt im Browser:'}</p>
       <div class="ext-links">${regionalTeamLinks(t).map(x => extLink(x, 'ext-link big')).join('')}</div>
     </div>`;
+  if (row && !silent) $('tr.me')?.scrollIntoView({ block: 'nearest' });
 }
 
 /* ---------- Game ---------- */

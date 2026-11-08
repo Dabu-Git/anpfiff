@@ -26,7 +26,9 @@ Alternativ im Terminal: `python3 -m http.server 5173` in diesem Ordner.
 - **Team hinzufügen**: Suche über Bundesliga, 2. Bundesliga, Premier League, LaLiga, Serie A, Ligue 1, Eredivisie, Primeira Liga, Österr. Bundesliga, NBA, NFL, NHL und MLB
 - Live-Spiele aktualisieren sich automatisch, heller und dunkler Modus, für Handy optimiert
 
-- **Vorarlberg & Ostschweiz**: Regionalliga West, Eliteliga, Vorarlbergliga, Landesliga, 1.–5. Landesklasse und die Schweizer 2. Liga regional (z. B. FC Au-Berneck 05). Eigene Vereine lassen sich hinzufügen.
-  Für diese Ligen gibt es keine offene Datenschnittstelle (ÖFB und football.ch sperren automatische Abrufe) – Tabelle und Spiele werden deshalb auf der jeweiligen Seite geöffnet.
+- **Vorarlberg & Ostschweiz**: Regionalliga West, Eliteliga, Vorarlbergliga, Landesliga, 1.–5. Landesklasse und die Schweizer 2. Liga regional (OFV, Gruppe 1 mit dem FC Au-Berneck 05). Eigene Vereine lassen sich hinzufügen.
+  - Tabelle **Regionalliga West**: live aus Wikipedia (CC BY-SA 4.0)
+  - Tabelle **OFV 2. Liga, Gruppe 1**: stündlich per GitHub Actions von der öffentlichen Seite des Liechtensteiner Fussballverbands (`scripts/fetch_regional.py`)
+  - Eliteliga und tiefere Ligen: Für 2026/27 gibt es keine offene Quelle (der ÖFB sperrt automatische Abrufe). Die App zeigt automatisch eine Tabelle, sobald Wikipedia eine führt; bis dahin Links zu Soccerway, Google und dem Verband.
 
 Favoriten werden lokal im Browser gespeichert. Die Daten stammen aus der öffentlichen ESPN-Sport-API.

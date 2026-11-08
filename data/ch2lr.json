@@ -1,0 +1,165 @@
+{
+ "title": "2. Liga - Gruppe 1",
+ "season": "2026/27",
+ "rows": [
+  {
+   "rank": 1,
+   "team": "FC Bad Ragaz",
+   "p": 12,
+   "w": 10,
+   "d": 1,
+   "l": 1,
+   "gf": 31,
+   "ga": 16,
+   "pts": 31
+  },
+  {
+   "rank": 2,
+   "team": "FC Rüthi",
+   "p": 12,
+   "w": 8,
+   "d": 3,
+   "l": 1,
+   "gf": 38,
+   "ga": 15,
+   "pts": 27
+  },
+  {
+   "rank": 3,
+   "team": "Valposchiavo Calcio",
+   "p": 12,
+   "w": 7,
+   "d": 3,
+   "l": 2,
+   "gf": 29,
+   "ga": 18,
+   "pts": 24
+  },
+  {
+   "rank": 4,
+   "team": "Chur 97",
+   "p": 13,
+   "w": 7,
+   "d": 3,
+   "l": 3,
+   "gf": 30,
+   "ga": 16,
+   "pts": 24
+  },
+  {
+   "rank": 5,
+   "team": "FC Montlingen",
+   "p": 12,
+   "w": 6,
+   "d": 2,
+   "l": 4,
+   "gf": 24,
+   "ga": 25,
+   "pts": 20
+  },
+  {
+   "rank": 6,
+   "team": "FC Au-Berneck 05",
+   "p": 13,
+   "w": 6,
+   "d": 1,
+   "l": 6,
+   "gf": 30,
+   "ga": 21,
+   "pts": 19
+  },
+  {
+   "rank": 7,
+   "team": "FC Rebstein",
+   "p": 12,
+   "w": 5,
+   "d": 2,
+   "l": 5,
+   "gf": 24,
+   "ga": 26,
+   "pts": 17
+  },
+  {
+   "rank": 8,
+   "team": "FC Vaduz 2",
+   "p": 12,
+   "w": 5,
+   "d": 2,
+   "l": 5,
+   "gf": 22,
+   "ga": 17,
+   "pts": 17
+  },
+  {
+   "rank": 9,
+   "team": "US Schluein Ilanz",
+   "p": 13,
+   "w": 4,
+   "d": 3,
+   "l": 6,
+   "gf": 26,
+   "ga": 30,
+   "pts": 15
+  },
+  {
+   "rank": 10,
+   "team": "FC Buchs",
+   "p": 13,
+   "w": 4,
+   "d": 3,
+   "l": 6,
+   "gf": 21,
+   "ga": 28,
+   "pts": 15
+  },
+  {
+   "rank": 11,
+   "team": "FC Eschenbach",
+   "p": 13,
+   "w": 4,
+   "d": 2,
+   "l": 7,
+   "gf": 21,
+   "ga": 38,
+   "pts": 14
+  },
+  {
+   "rank": 12,
+   "team": "FC Glarus",
+   "p": 13,
+   "w": 3,
+   "d": 3,
+   "l": 7,
+   "gf": 18,
+   "ga": 28,
+   "pts": 12
+  },
+  {
+   "rank": 13,
+   "team": "FC Rapperswil-Jona 2",
+   "p": 13,
+   "w": 3,
+   "d": 1,
+   "l": 9,
+   "gf": 24,
+   "ga": 34,
+   "pts": 10
+  },
+  {
+   "rank": 14,
+   "team": "FC Schaan",
+   "p": 13,
+   "w": 0,
+   "d": 3,
+   "l": 10,
+   "gf": 9,
+   "ga": 35,
+   "pts": 3
+  }
+ ],
+ "source": {
+  "label": "Liechtensteiner Fussballverband (LFV) / OFV",
+  "url": "https://www.lfv.li/breitenfussball/vereinsfussball/erwachsenenfussball/2-liga"
+ },
+ "updated": "2026-11-08T20:27:50+00:00"
+}

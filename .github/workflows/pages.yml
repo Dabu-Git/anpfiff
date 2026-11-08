@@ -1,0 +1,43 @@
+name: App veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # stündlich die regionalen Tabellen aktualisieren
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regionale Tabellen abrufen
+        run: |
+          if ! python3 -I scripts/fetch_regional.py data; then
+            echo "Abruf fehlgeschlagen – letzten veröffentlichten Stand behalten"
+            curl -sf -o data/ch2lr.json https://dabu-git.github.io/anpfiff/data/ch2lr.json || true
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
