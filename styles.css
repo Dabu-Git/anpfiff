@@ -592,3 +592,81 @@ table.standings { width: 100%; border-collapse: collapse; font-size: 14px; }
 }
 .paste-form textarea:focus { border-color: var(--accent); }
 .paste-msg { font-size: 13px; align-self: center; }
+
+/* ---------- iPhone-Korrekturen ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+* { -webkit-tap-highlight-color: transparent; }
+/* Fenster "Team hinzufügen": die scrollbaren Chip-Reihen dürfen das Raster nicht verbreitern */
+.modal { grid-template-columns: minmax(0, 1fr); }
+.modal-panel { min-width: 0; justify-self: center; max-height: 86vh; max-height: 86dvh; }
+.modal-panel > * { min-width: 0; }
+.chips, .search-results, .custom-form, .cf-row { min-width: 0; }
+/* Labels auf den Teamkarten ("NÄCHSTES") brauchen etwas mehr Platz */
+.tc-line .lbl { width: auto; min-width: 66px; white-space: nowrap; }
+.tc-line .vs { width: 18px; text-align: center; }
+/* Hover-Effekte nur bei echter Maus – auf dem iPhone bleiben sie sonst nach dem Antippen hängen */
+@media (hover: none) {
+  .team-card:hover, .league-tile:hover { transform: none; border-color: var(--line); }
+  .star-btn:hover { transform: none; color: var(--text-3); }
+  .star-btn.on:hover { color: #fbbf24; }
+  .match:hover, .rt-row:hover, .standings tr.clickable:hover td { background: none; }
+  .standings tr.me:hover td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .nav a:hover { background: none; color: var(--text-2); }
+  .nav a.active:hover { background: var(--card-2); color: var(--text); }
+}
+@media (max-width: 760px) {
+  /* Safari zoomt bei Eingabefeldern unter 16px automatisch hinein */
+  input, select, textarea, .search-box input { font-size: 16px !important; }
+  .modal { padding: max(10px, env(safe-area-inset-top)) 10px 10px; }
+  .modal-panel { padding: 16px; border-radius: 20px; max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px - env(safe-area-inset-top)); }
+  .search-results { grid-template-columns: 1fr; }
+  /* Teamseite: Kopfbereich kompakt */
+  .hero-inner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+  .hero-logo, .hero-badge { width: 60px; height: 60px; }
+  .hero-badge { border-radius: 18px; font-size: 22px; }
+  .hero h1 { font-size: 23px; line-height: 1.15; }
+  .hero .sub { font-size: 13px; gap: 6px; }
+  .hero-actions { margin-left: 0; align-self: start; }
+  .hero-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .kpi { padding: 10px 11px; }
+  .kpi .k { font-size: 10px; }
+  .kpi .v { font-size: 19px; }
+  /* Spielseite */
+  .sh-main { gap: 8px; }
+  .sh-score { font-size: 40px; }
+}
+/* Ältere iPhones (iOS < 16.2) kennen color-mix nicht: einfache Ersatzfarben */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .topbar { background: var(--bg); }
+  .tc-line, .tc-ext { background: var(--card-2); }
+  .tc-line.is-live { background: rgba(255, 59, 92, .14); }
+  .star-btn.on { background: rgba(251, 191, 36, .14); border-color: rgba(251, 191, 36, .4); }
+  .table-link { background: var(--card-2); border-color: var(--line-2); }
+  .hero { background: var(--card); }
+  .team-card::before { background: none; }
+  .match-score.live { background: rgba(255, 59, 92, .14); }
+  .standings tr.me td { background: rgba(25, 184, 116, .14); }
+  .nav { background: var(--bg-2); }
+}
+.transfer { margin-top: 8px; }
+.transfer-note { font-size: 13.5px; line-height: 1.5; margin: 10px 0 12px; }
+.transfer .cf-row + .cf-row, .transfer .import-form { margin-top: 10px; }
+/* Kopf, Suche und Chips im Fenster nie stauchen – nur die Ergebnisliste scrollt */
+.modal-panel > :not(.search-results) { flex-shrink: 0; }
+.modal-panel > .search-results { flex: 1 1 auto; min-height: 120px; }
+@media (max-width: 760px) {
+  .tabs { width: 100%; }
+  .tabs .tab { flex: 1 1 auto; padding: 8px 8px; font-size: 13px; text-align: center; }
+}
+/* Sehr schmale iPhones (z. B. iPhone SE der 1. Generation) */
+@media (max-width: 360px) {
+  .container { padding-left: 12px; padding-right: 12px; }
+  .team-card { padding: 14px; }
+  .tc-line { padding: 9px 10px; gap: 6px; }
+  .tc-line .lbl { min-width: 0; font-size: 9.5px; letter-spacing: .02em; }
+  .tc-line .vs { display: none; }
+  .tc-line .val { font-size: 12.5px; }
+  .tc-line .val.dim { font-size: 11.5px !important; }
+  .nav a, .nav-add { font-size: 10px; white-space: nowrap; padding: 8px 2px; }
+  .form i { width: 20px; height: 20px; }
+}

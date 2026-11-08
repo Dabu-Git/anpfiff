@@ -241,6 +241,35 @@ function toggleFav(team) {
   store.set('fk.favorites', favorites);
 }
 
+// Favoriten übertragen (iPhone: die App auf dem Home-Bildschirm hat einen eigenen Speicher)
+function favCode() {
+  const slim = favorites.map(f => ({ l: f.league, i: f.id, n: f.name, a: f.abbr, o: f.logo, c: f.color,
+    ...(f.regional ? { r: 1, s: f.short, k: f.links || [], u: f.custom ? 1 : 0 } : {}) }));
+  return 'ANPFIFF1:' + btoa(unescape(encodeURIComponent(JSON.stringify(slim))));
+}
+function importFavCode(code) {
+  const m = String(code).trim().match(/ANPFIFF1:([A-Za-z0-9+/=]+)/);
+  if (!m) return -1;
+  let arr;
+  try { arr = JSON.parse(decodeURIComponent(escape(atob(m[1])))); } catch { return -1; }
+  let n = 0;
+  for (const x of Array.isArray(arr) ? arr : []) {
+    if (!x?.l || !x?.i || isFav(x.l, x.i)) continue;
+    const f = { league: String(x.l), id: String(x.i), name: String(x.n || ''), abbr: x.a, logo: x.o, color: x.c };
+    if (x.r) Object.assign(f, { regional: true, short: x.s, links: Array.isArray(x.k) ? x.k : [], custom: !!x.u });
+    favorites.push(f); n++;
+  }
+  store.set('fk.favorites', favorites);
+  return n;
+}
+function transferHtml(open = false) {
+  return `<details class="card paste-card transfer" ${open ? 'open' : ''}><summary><b>Favoriten übertragen</b><span class="dim">z. B. von Safari in die App auf dem Home-Bildschirm</span></summary>
+    <p class="muted transfer-note">Auf dem iPhone hat die App auf dem Home-Bildschirm einen eigenen Speicher. Kopiere den Code dort, wo deine Favoriten sind, und füge ihn in der anderen App ein.</p>
+    ${favorites.length ? `<div class="cf-row"><button class="btn ghost" data-action="copy-favs" type="button">Code kopieren</button></div>` : ''}
+    <form class="import-form cf-row"><input id="favCodeInput" placeholder="Code einfügen (ANPFIFF1:…)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" type="submit">Übernehmen</button></form>
+    <span class="paste-msg dim" id="favMsg" role="status"></span></details>`;
+}
+
 /* ---------- Fetch with cache ---------- */
 const cache = new Map();
 function get(url, ttl = 30000) {
@@ -259,7 +288,7 @@ const DE_NAMES = [
   ['Borussia Monchengladbach', 'Borussia Mönchengladbach'], ["M'gladbach", 'Gladbach'], ['Monchengladbach', 'Mönchengladbach'],
   ['Hamburg SV', 'Hamburger SV'], ['Nurnberg', 'Nürnberg'], ['Dusseldorf', 'Düsseldorf'], ['Furth', 'Fürth'],
   ['Saarbrucken', 'Saarbrücken'], ['Osnabruck', 'Osnabrück'], ['Munster', 'Münster'], ['Preussen', 'Preußen'],
-  ['Internazionale', 'Inter Mailand'], ['AC Milan', 'AC Mailand'], ['Rapid Vienna', 'Rapid Wien'], ['Austria Vienna', 'Austria Wien'],
+  ['Internazionale', 'Inter Mailand'], ['Inter Milan', 'Inter Mailand'], ['AC Milan', 'AC Mailand'], ['Rapid Vienna', 'Rapid Wien'], ['Austria Vienna', 'Austria Wien'],
   ['Munich', 'München'],
 ];
 function germanize(text) {
@@ -615,7 +644,8 @@ async function viewHome(_, { silent } = {}) {
         <div class="card list-card">${results.length ? results.map(e => matchRow(e, { favIds })).join('') : '<div class="empty-inline">Noch keine Ergebnisse</div>'}</div></section>
       <section class="section"><div class="section-head"><h2>Nächste Spiele</h2></div>
         <div class="card list-card">${upcoming.length ? upcoming.map(e => matchRow(e, { favIds, leagueTag: true })).join('') : '<div class="empty-inline">Keine anstehenden Spiele</div>'}</div></section>
-    </div>`;
+    </div>
+    ${transferHtml()}`;
 }
 
 function shortName(n) {
@@ -632,7 +662,8 @@ async function renderOnboarding() {
     <p>Füge deine Lieblingsteams hinzu und verfolge Live-Spiele, Ergebnisse, Torschützen und Statistiken an einem Ort.</p>
     <button class="btn" data-action="open-search">${STAR.replace('<svg', '<svg width="16" height="16"')} Teams auswählen</button>
     <div class="popular" id="popular"><div class="spinner" style="margin:10px auto"></div></div>
-  </div>`;
+  </div>
+  <div style="margin-top:16px">${transferHtml(false)}</div>`;
   const teams = await loadAllTeams();
   const pop = POPULAR.map(([l, id]) => teams.find(t => t.league === l && t.id === id)).filter(Boolean);
   const el = $('#popular');
@@ -1378,6 +1409,15 @@ function customTeamForm(name = '', league = 'all') {
 }
 
 document.addEventListener('submit', ev => {
+  if (ev.target.classList.contains('import-form')) {
+    ev.preventDefault();
+    const n = importFavCode($('#favCodeInput').value);
+    const msg = $('#favMsg');
+    if (n < 0) { msg.textContent = 'Kein gültiger Code. Er beginnt mit ANPFIFF1:'; return; }
+    toast(n ? `${n} Favorit${n === 1 ? '' : 'en'} übernommen` : 'Alle Favoriten waren schon vorhanden');
+    renderToken++; route();
+    return;
+  }
   if (ev.target.classList.contains('paste-form')) {
     ev.preventDefault();
     const key = ev.target.dataset.league;
@@ -1495,6 +1535,12 @@ document.addEventListener('click', ev => {
     else if (a === 'close-search') closeSearch();
     else if (a === 'back') { if (history.length > 1) history.back(); else location.hash = '#/'; }
     else if (a === 'reload' || a === 'go-home') route();
+    else if (a === 'copy-favs') {
+      const code = favCode();
+      const fallback = () => { const i = $('#favCodeInput'); i.value = code; i.focus(); i.select(); $('#favMsg').textContent = 'Code markiert – jetzt kopieren und in der anderen App einfügen.'; };
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(() => toast('Code kopiert – in der anderen App einfügen'), fallback);
+      else fallback();
+    }
     else if (a === 'clear-table') { try { localStorage.removeItem(manualKey(act.dataset.league)); } catch {} toast('Eingefügte Tabelle entfernt'); renderToken++; route(); }
     else if (a === 'toggle-theme') {
       const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
