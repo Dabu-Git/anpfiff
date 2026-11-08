@@ -1,10 +1,10 @@
-/* Fankurve Service Worker
+/* Anpfiff Service Worker
  * - App-Dateien: erst Netzwerk (damit Updates sofort ankommen), offline aus dem Cache
  * - Team-Logos: aus dem Cache, im Hintergrund aktualisiert
  * - Sportdaten (API): immer live, offline letzter Stand */
-const SHELL = 'fankurve-shell-v1';
-const IMAGES = 'fankurve-img-v1';
-const DATA = 'fankurve-data-v1';
+const SHELL = 'anpfiff-shell-v2';
+const IMAGES = 'anpfiff-img-v2';
+const DATA = 'anpfiff-data-v2';
 const PRECACHE = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 

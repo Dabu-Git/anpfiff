@@ -1,6 +1,6 @@
 {
-  "name": "Fankurve",
-  "short_name": "Fankurve",
+  "name": "Anpfiff",
+  "short_name": "Anpfiff",
   "description": "Deine Lieblingsteams live: Ergebnisse, Torschützen, Statistiken und Tabellen.",
   "lang": "de",
   "start_url": "./#/",
@@ -15,6 +15,7 @@
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Spieltag", "url": "./#/live", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Spieltag", "url": "./#/live", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Tabellen", "url": "./#/tables", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

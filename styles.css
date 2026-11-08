@@ -8,8 +8,8 @@
   --text: #eef1f7;
   --text-2: #a4acbd;
   --text-3: #6b7387;
-  --accent: #5b8cff;
-  --accent-2: #8a6bff;
+  --accent: #19b874;
+  --accent-2: #0b8f63;
   --live: #ff3b5c;
   --win: #22c55e;
   --draw: #f5b83d;
@@ -43,8 +43,8 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   background-image:
-    radial-gradient(1200px 500px at 10% -10%, rgba(91, 140, 255, 0.10), transparent 60%),
-    radial-gradient(900px 400px at 100% 0%, rgba(138, 107, 255, 0.08), transparent 60%);
+    radial-gradient(1200px 500px at 10% -10%, rgba(25, 184, 116, 0.10), transparent 60%),
+    radial-gradient(900px 400px at 100% 0%, rgba(11, 143, 99, 0.07), transparent 60%);
   background-attachment: fixed;
 }
 a { color: inherit; text-decoration: none; }
@@ -510,4 +510,65 @@ table.standings { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (display-mode: standalone) {
   body { overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
   input { -webkit-user-select: text; user-select: text; }
+}
+
+/* ---------- Anpfiff: Marke, Tabellen, Regional ---------- */
+.brand-mark { object-fit: cover; padding: 0; }
+.tc-foot { align-items: center; }
+.table-link {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--text);
+  padding: 6px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, var(--card-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); white-space: nowrap;
+}
+.table-link svg { width: 14px; height: 14px; color: var(--accent); }
+.table-link:hover { background: color-mix(in srgb, var(--accent) 26%, var(--card-2)); }
+.sub-link { color: inherit; font-weight: 600; }
+.sub-link:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+
+.league-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.league-tile { display: flex; align-items: center; gap: 14px; padding: 14px 16px; transition: transform .15s, border-color .15s; box-shadow: none; }
+.league-tile:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.lt-flag { font-size: 26px; line-height: 1; width: 34px; text-align: center; flex: none; }
+.lt-txt { flex: 1; min-width: 0; }
+.lt-name { font-weight: 700; font-size: 15px; }
+.lt-sub { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+.standings tr.fav td { background: color-mix(in srgb, #fbbf24 8%, transparent); }
+
+.tc-badge, .mini-badge {
+  display: grid; place-items: center; flex: none; font-weight: 800; color: #fff; letter-spacing: .02em;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--team, var(--accent)) 90%, #fff), color-mix(in srgb, var(--team, var(--accent)) 70%, #000));
+}
+.tc-badge { width: 52px; height: 52px; border-radius: 16px; font-size: 18px; }
+.hero-badge { width: 88px; height: 88px; border-radius: 26px; font-size: 30px; }
+.mini-badge { width: 24px; height: 24px; border-radius: 7px; font-size: 10px; --team: var(--accent); }
+.mini-badge.lg { width: 34px; height: 34px; border-radius: 10px; font-size: 12px; }
+.tc-ext { justify-content: space-between; font-weight: 600; color: var(--text); }
+.tc-ext svg, .ext-link svg { width: 15px; height: 15px; color: var(--text-3); flex: none; }
+.tc-ext:hover { background: color-mix(in srgb, var(--accent) 14%, var(--card-2)); }
+
+.info-card { padding: 20px; margin-bottom: 22px; }
+.info-card p { margin: 0 0 14px; color: var(--text-2); font-size: 14px; line-height: 1.55; max-width: 70ch; }
+.ext-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.ext-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 14px; color: var(--text); }
+.ext-link.big { padding: 13px 14px; border-radius: 12px; background: var(--card-2); border: 1px solid var(--line); }
+.ext-link.big:hover { border-color: var(--accent); }
+.rt-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; }
+.rt-row + .rt-row { border-top: 1px solid var(--line); }
+.rt-row:hover { background: var(--card-2); }
+.rt-row .nm { flex: 1; font-weight: 600; }
+.rt-row .star-btn { width: 34px; height: 34px; }
+
+.custom-form { display: grid; gap: 12px; padding: 16px; border-radius: 14px; background: var(--card); border: 1px dashed var(--line-2); }
+.info-card + .section .custom-form, .card > .custom-form { border: 0; padding: 0; background: none; }
+.custom-form p { margin: 4px 0 0; font-size: 13px; }
+.cf-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.cf-row input, .cf-row select {
+  flex: 1 1 180px; min-width: 0; font: inherit; font-size: 14.5px; color: var(--text); background: var(--card-2);
+  border: 1px solid var(--line-2); border-radius: 12px; padding: 11px 12px; outline: 0;
+}
+.cf-row input:focus, .cf-row select:focus { border-color: var(--accent); }
+.cf-row .btn { flex: none; }
+@media (max-width: 760px) {
+  .nav a, .nav-add { padding: 8px 4px; }
+  .league-grid { grid-template-columns: 1fr; }
 }

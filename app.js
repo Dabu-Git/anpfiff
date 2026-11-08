@@ -1,4 +1,4 @@
-/* Fankurve – deine Lieblingsteams live verfolgen.
+/* Anpfiff – deine Lieblingsteams live verfolgen.
  * Daten: öffentliche ESPN-Sport-API (kein Schlüssel nötig). */
 (() => {
 'use strict';
@@ -12,6 +12,7 @@ const SPORTS = {
   football:   { name: 'American Football', icon: '🏈' },
   hockey:     { name: 'Eishockey',         icon: '🏒' },
   baseball:   { name: 'Baseball',          icon: '⚾' },
+  regional:   { name: 'Regional',          icon: '🏔️' },
 };
 
 const LEAGUES = [
@@ -34,6 +35,68 @@ const LEAGUES = [
 const leagueByKey = Object.fromEntries(LEAGUES.map(l => [l.key, l]));
 const sportOf = key => key.split('/')[0];
 
+/* ---------- Regionale Ligen (Vorarlberg & Ostschweiz) ----------
+ * Für diese Ligen gibt es keine offene Datenschnittstelle: ÖFB und football.ch sperren
+ * automatische Zugriffe. Die App führt Ligen und Teams deshalb mit direkten Links zu
+ * Tabelle und Spielplan, die im Browser geöffnet werden. */
+const SW = 'https://www.soccerway.com';
+const gsearch = q => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+const VFV = ['Vorarlberger Fußballverband', 'https://www.vfv.at/'];
+const SFV = ['Schweizerischer Fussballverband', 'https://www.football.ch/'];
+const REGIONAL_LEAGUES = [
+  { key: 'regional/rlw', name: 'Regionalliga West', region: 'Vorarlberg & Tirol', flag: '🇦🇹', tier: 3,
+    links: [['Tabelle & Spiele', `${SW}/austria/regionalliga-west/standings/`], ['Spielberichte (VOL.AT)', 'https://www.vol.at/themen/regionalliga']] },
+  { key: 'regional/elite', name: 'Eliteliga Vorarlberg', region: 'Vorarlberg', flag: '🇦🇹', tier: 4,
+    links: [['Tabelle & Spiele', `${SW}/austria/regionalliga-west-vorarlberg/standings/`]] },
+  { key: 'regional/vbgl', name: 'Vorarlbergliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 5,
+    links: [['Tabelle & Spiele', `${SW}/austria/vorarlberg/standings/`]] },
+  { key: 'regional/ll', name: 'Landesliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 6, links: [] },
+  { key: 'regional/1lk', name: '1. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 7, links: [] },
+  { key: 'regional/2lk', name: '2. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 8, links: [] },
+  { key: 'regional/3lk', name: '3. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 9, links: [] },
+  { key: 'regional/4lk', name: '4. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 10, links: [] },
+  { key: 'regional/5lko', name: '5. Landesklasse Oberland', region: 'Vorarlberg', flag: '🇦🇹', tier: 11, links: [] },
+  { key: 'regional/5lku', name: '5. Landesklasse Unterland', region: 'Vorarlberg', flag: '🇦🇹', tier: 11, links: [] },
+  { key: 'regional/ch2lr', name: '2. Liga regional', region: 'Ostschweiz (OFV)', flag: '🇨🇭', tier: 6, links: [] },
+];
+const regionalByKey = Object.fromEntries(REGIONAL_LEAGUES.map(l => [l.key, l]));
+const isRegional = key => String(key || '').startsWith('regional/');
+const leagueName = key => leagueByKey[key]?.name || regionalByKey[key]?.name || key;
+const leagueFlag = key => leagueByKey[key]?.flag || regionalByKey[key]?.flag || '';
+function regionalLeagueLinks(l) {
+  const swiss = l.flag === '🇨🇭';
+  return [...l.links,
+    ['Aktuelle Tabelle (Google)', gsearch(`${l.name} ${swiss ? 'OFV Ostschweiz' : 'Vorarlberg'} Tabelle`)],
+    swiss ? SFV : VFV];
+}
+const rteam = (league, id, name, short, links = []) => ({ league, id, name, short, regional: true, links });
+const REGIONAL_TEAMS = [
+  rteam('regional/ch2lr', 'fc-au-berneck-05', 'FC Au-Berneck 05', 'Au-Berneck', [['Spiele & Tabelle', `${SW}/team/au-berneck/rBeniS7r/`]]),
+  rteam('regional/rlw', 'fc-dornbirn', 'FC Dornbirn 1913', 'Dornbirn'),
+  rteam('regional/rlw', 'fc-lustenau', 'FC Lustenau 07', 'Lustenau'),
+  rteam('regional/rlw', 'vfb-hohenems', 'VfB Hohenems', 'Hohenems'),
+  rteam('regional/rlw', 'sc-roethis', 'SC Röthis', 'Röthis'),
+  rteam('regional/rlw', 'fc-lauterach', 'FC Lauterach', 'Lauterach'),
+  rteam('regional/rlw', 'fc-wolfurt', 'FC Wolfurt', 'Wolfurt'),
+  rteam('regional/rlw', 'sv-lochau', 'SV Lochau', 'Lochau'),
+  rteam('regional/rlw', 'altach-juniors', 'SCR Altach Juniors', 'Altach Juniors'),
+];
+function regionalTeamLinks(t) {
+  const l = regionalByKey[t.league];
+  return [...(t.links || []),
+    ['Spielplan & Ergebnisse (Google)', gsearch(`${t.name} Spielplan Ergebnisse`)],
+    ...(l ? regionalLeagueLinks(l).map(([n, u]) => [`${l.name}: ${n}`, u]) : [])];
+}
+function initials(name) {
+  const words = String(name).replace(/\b(FC|SC|SV|VfB|SCR|FK|SK|USV|ASV|TSV|BW|SPG|SG)\b/g, ' ')
+    .split(/[\s\-\/.]+/).filter(w => w && !/^\d+$/.test(w));
+  if (!words.length) return String(name).slice(0, 2).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+const extLink = ([label, url], cls = 'ext-link') =>
+  `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}<svg viewBox="0 0 24 24"><path d="M14 3h7v7h-2V6.4l-9.3 9.3-1.4-1.4L17.6 5H14V3zM5 5h6v2H7v10h10v-4h2v6H5V5z"/></svg></a>`;
+
 const POPULAR = [
   ['soccer/ger.1', '132'], ['soccer/ger.1', '124'], ['soccer/esp.1', '86'], ['soccer/esp.1', '83'],
   ['soccer/eng.1', '364'], ['soccer/eng.1', '382'], ['basketball/nba', '13'], ['basketball/nba', '2'],
@@ -53,7 +116,9 @@ function toggleFav(team) {
     favorites = favorites.filter(f => favKey(f.league, f.id) !== favKey(team.league, team.id));
     toast(`${team.name} entfernt`);
   } else {
-    favorites.push({ league: team.league, id: String(team.id), name: team.name, abbr: team.abbr, logo: team.logo, color: team.color });
+    const f = { league: team.league, id: String(team.id), name: team.name, abbr: team.abbr, logo: team.logo, color: team.color };
+    if (team.regional) Object.assign(f, { regional: true, short: team.short, links: team.links || [], custom: !!team.custom });
+    favorites.push(f);
     toast(`⭐ ${team.name} hinzugefügt`);
   }
   store.set('fk.favorites', favorites);
@@ -315,11 +380,15 @@ async function viewHome(_, { silent } = {}) {
   const token = renderToken;
 
   const favIds = new Set(favorites.map(f => favKey(f.league, f.id)));
-  const leagues = [...new Set(favorites.map(f => f.league))];
-  const [schedules, boards] = await Promise.all([
-    Promise.all(favorites.map(f => safe(loadTeamSchedule(f.league, f.id)))),
+  const espnFavs = favorites.filter(f => !isRegional(f.league));
+  const regionalFavs = favorites.filter(f => isRegional(f.league));
+  const leagues = [...new Set(espnFavs.map(f => f.league))];
+  const [schedules, boards, tables] = await Promise.all([
+    Promise.all(espnFavs.map(f => safe(loadTeamSchedule(f.league, f.id)))),
     Promise.all(leagues.map(l => safe(loadScoreboard(l)))),
+    Promise.all(leagues.map(l => safe(get(`${API2}/${l}/standings`, 300000)))),
   ]);
+  const tableByLeague = Object.fromEntries(leagues.map((l, i) => [l, tables[i]]));
   if (token !== renderToken) return;
 
   // Live-Daten aus Scoreboards haben Vorrang
@@ -328,7 +397,7 @@ async function viewHome(_, { silent } = {}) {
   const merge = e => boardById.get(e.id) || e;
 
   const allEvents = new Map();
-  const cards = favorites.map((f, i) => {
+  const cards = espnFavs.map((f, i) => {
     const events = (schedules[i]?.events || []).map(merge);
     const st = schedules[i]?.team;
     if (st?.color && !f.color) { f.color = st.color; store.set('fk.favorites', favorites); }
@@ -387,14 +456,17 @@ async function viewHome(_, { silent } = {}) {
     }
     if (!lines) lines = '<div class="tc-line"><span class="dim">Keine Spieldaten verfügbar</span></div>';
     const lgInfo = leagueByKey[f.league];
+    const pos = findStandingEntry(tableByLeague[f.league], f.id);
+    const rankTxt = pos ? `Platz ${pos.entry._pos}` : 'Tabelle';
     return `<div class="card team-card" style="--team:${hex(f.color)}" data-href="#/team/${s}/${lg}/${f.id}">
       <div class="tc-head">${img(f.logo, 'tc-logo')}
         <div><div class="tc-name">${esc(f.name)}</div><div class="tc-league">${SPORTS[sport].icon} ${esc(lgInfo?.name || f.league)}</div></div>
         ${starBtn({ ...f })}</div>
       <div class="tc-body">${lines}</div>
-      <div class="tc-foot"><span>Form</span>${formDots(events, f.id)}</div>
+      <div class="tc-foot">${formDots(events, f.id)}<a class="table-link" href="#/league/${s}/${lg}/${f.id}">${TABLE_ICON}${rankTxt}</a></div>
     </div>`;
   };
+  const regionalCard = f => regionalCardHtml(f);
 
   const liveCard = e => {
     const [s, lg] = e.league.split('/');
@@ -416,7 +488,7 @@ async function viewHome(_, { silent } = {}) {
     <section class="section">
       <div class="section-head"><h2>Meine Teams <span class="count">${favorites.length}</span></h2>
         <button class="link-btn" data-action="open-search">+ Team hinzufügen</button></div>
-      <div class="team-grid">${cards.map(teamCard).join('')}</div>
+      <div class="team-grid">${cards.map(teamCard).join('')}${regionalFavs.map(regionalCard).join('')}</div>
     </section>
     <div class="cols">
       <section class="section"><div class="section-head"><h2>Letzte Ergebnisse</h2></div>
@@ -436,7 +508,7 @@ async function renderOnboarding() {
   currentView.refresh = 0;
   app.innerHTML = `<div class="card empty">
     <div class="emoji">🏟️</div>
-    <h2>Willkommen bei Fankurve</h2>
+    <h2>Willkommen bei Anpfiff</h2>
     <p>Füge deine Lieblingsteams hinzu und verfolge Live-Spiele, Ergebnisse, Torschützen und Statistiken an einem Ort.</p>
     <button class="btn" data-action="open-search">${STAR.replace('<svg', '<svg width="16" height="16"')} Teams auswählen</button>
     <div class="popular" id="popular"><div class="spinner" style="margin:10px auto"></div></div>
@@ -446,7 +518,7 @@ async function renderOnboarding() {
   const el = $('#popular');
   if (!el) return;
   el.innerHTML = `<div style="width:100%;font-size:13px;color:var(--text-3);font-weight:600;margin-bottom:4px">BELIEBTE TEAMS</div>` +
-    pop.map(t => `<button class="pop-chip ${isFav(t.league, t.id) ? 'on' : ''}" data-fav='${esc(JSON.stringify(t))}'>${img(t.logo)}${esc(t.short || t.name)}</button>`).join('') +
+    [...pop, REGIONAL_TEAMS[0]].map(t => `<button class="pop-chip ${isFav(t.league, t.id) ? 'on' : ''}" data-fav='${esc(JSON.stringify(t))}'>${t.regional ? `<span class="mini-badge">${esc(initials(t.name))}</span>` : img(t.logo)}${esc(t.short || t.name)}</button>`).join('') +
     `<div style="width:100%;margin-top:18px"><button class="btn" data-action="go-home" id="goHome" ${favorites.length ? '' : 'hidden'}>Los geht's →</button></div>`;
 }
 
@@ -457,7 +529,7 @@ async function viewLive(_, { silent } = {}) {
   const app = $('#app');
   const token = renderToken;
   const date = new Date(); date.setDate(date.getDate() + liveState.offset);
-  const favLeagues = [...new Set(favorites.map(f => f.league))];
+  const favLeagues = [...new Set(favorites.map(f => f.league).filter(l => leagueByKey[l]))];
   let leagues;
   if (liveState.filter === 'fav') leagues = favLeagues.length ? favLeagues : LEAGUES.map(l => l.key);
   else if (liveState.filter === 'all') leagues = LEAGUES.map(l => l.key);
@@ -607,7 +679,7 @@ async function viewTeam([sport, lg, id], { silent } = {}) {
       <div class="hero-inner">
         ${img(team.logo, 'hero-logo')}
         <div><h1>${esc(team.name)}</h1>
-          <div class="sub">${SPORTS[sport].icon} ${esc(lgName)}${rank ? ` · Platz ${esc(rank)}${entry?.group?.name && !isSoccer ? ` in der ${esc(entry.group.name)}` : ''}` : ''} ${formDots(events, id)}</div></div>
+          <div class="sub"><a class="sub-link" href="#/league/${sport}/${lg}/${id}">${SPORTS[sport].icon} ${esc(lgName)} ›</a>${rank ? ` · Platz ${esc(rank)}${entry?.group?.name && !isSoccer ? ` in der ${esc(entry.group.name)}` : ''}` : ''} ${formDots(events, id)}</div></div>
         <div class="hero-actions">${starBtn(team)}</div>
       </div>
       <div class="hero-kpis">${kpis.map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>
@@ -744,10 +816,11 @@ function standingsTable(data, league, id) {
         return `<td class="${n === 'points' ? 'pts' : ''}">${esc(s(n)?.displayValue ?? '-')}</td>`;
       }).join('');
       const me = String(e.team?.id) === String(id);
+      const fav = !me && isFav(league, e.team?.id);
       const note = e.note?.color ? `style="--note:${esc(e.note.color)}" title="${esc(e.note.description || '')}"` : '';
-      return `<tr class="${me ? 'me' : ''} clickable" data-href="#/team/${sp}/${lg}/${e.team?.id}">
+      return `<tr class="${me ? 'me' : ''} ${fav ? 'fav' : ''} clickable" data-href="#/team/${sp}/${lg}/${e.team?.id}">
         <td class="rank l" ${note}>${i + 1}</td>
-        <td class="l"><div class="tm">${img(logoOf(e.team))}${esc(e.team?.shortDisplayName || e.team?.displayName)}</div></td>${cells}</tr>`;
+        <td class="l"><div class="tm">${img(logoOf(e.team))}${esc(e.team?.shortDisplayName || e.team?.displayName)}${fav ? ' <span class="fav-mark">★</span>' : ''}</div></td>${cells}</tr>`;
     }).join('');
     const legend = [...new Map(g.entries.filter(e => e.note?.color).map(e => [e.note.color, e.note.description])).entries()];
     return `<div class="card section">${groups.length > 1 ? `<div class="group-title">${esc(g.name || '')}</div>` : ''}
@@ -756,6 +829,112 @@ function standingsTable(data, league, id) {
       ${legend.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${legend.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(d)}</span>`).join('')}</div>` : ''}
     </div>`;
   }).join('');
+}
+
+/* ---------- Tabellen ---------- */
+const TABLE_ICON = '<svg viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm2 2v3h14V6H5zm0 5v3h6v-3H5zm8 0v3h6v-3h-6zm-8 5v2h6v-2H5zm8 0v2h6v-2h-6z"/></svg>';
+
+async function viewTables() {
+  currentView.refresh = 0;
+  const favLeagues = new Set(favorites.map(f => f.league));
+  const tile = l => {
+    const [s, lg] = l.key.split('/');
+    return `<a class="card league-tile" href="#/league/${s}/${lg}"><span class="lt-flag">${l.flag}</span>
+      <div class="lt-txt"><div class="lt-name">${esc(l.name)}</div><div class="lt-sub">${SPORTS[s].icon} ${SPORTS[s].name}${favLeagues.has(l.key) ? ' · <span class="fav-mark">★</span>' : ''}</div></div>${ARROW}</a>`;
+  };
+  const rtile = l => `<a class="card league-tile" href="#/regional/${l.key.split('/')[1]}"><span class="lt-flag">${l.flag}</span>
+      <div class="lt-txt"><div class="lt-name">${esc(l.name)}</div><div class="lt-sub">${esc(l.region)} · ${l.tier}. Liga-Stufe${favLeagues.has(l.key) ? ' · <span class="fav-mark">★</span>' : ''}</div></div>${ARROW}</a>`;
+  const mine = [...LEAGUES.filter(l => favLeagues.has(l.key)).map(tile), ...REGIONAL_LEAGUES.filter(l => favLeagues.has(l.key)).map(rtile)];
+  const block = (title, html) => html.length ? `<section class="section"><div class="section-head"><h2>${title}</h2></div><div class="league-grid">${html.join('')}</div></section>` : '';
+  $('#app').innerHTML = `<div class="page-head"><div><h1>Tabellen</h1><p>Wähle eine Liga, um die aktuelle Tabelle zu sehen.</p></div></div>
+    ${block('Meine Ligen', mine)}
+    ${block('⚽ Fußball', LEAGUES.filter(l => sportOf(l.key) === 'soccer').map(tile))}
+    ${block('🏔️ Vorarlberg & Ostschweiz', REGIONAL_LEAGUES.map(rtile))}
+    ${block('🇺🇸 US-Sport', LEAGUES.filter(l => sportOf(l.key) !== 'soccer').map(tile))}`;
+}
+
+async function viewLeague([sport, lg, teamId], { silent } = {}) {
+  const league = `${sport}/${lg}`;
+  const info = leagueByKey[league];
+  const app = $('#app');
+  if (!silent) app.innerHTML = skeleton();
+  const token = renderToken;
+  const [standings, board] = await Promise.all([
+    safe(get(`${API2}/${league}/standings`, 300000)),
+    safe(loadScoreboard(league)),
+  ]);
+  if (token !== renderToken) return;
+  const favIds = new Set(favorites.map(f => favKey(f.league, f.id)));
+  const live = (board || []).filter(e => e.state === 'in');
+  currentView.refresh = live.length ? 30000 : 0;
+  const order = { in: 0, pre: 1, post: 2 };
+  const games = (board || []).slice().sort((a, b) => (order[a.state] - order[b.state]) || (new Date(a.date) - new Date(b.date)));
+  const rawSeason = standings?.seasons?.[0]?.displayName || standings?.children?.[0]?.standings?.seasonDisplayName || '';
+  const sm = String(rawSeason).match(/(\d{4})(?:-(\d{2,4}))?/);
+  const season = sm ? `Saison ${sm[1]}${sm[2] ? '/' + sm[2].slice(-2) : ''}` : '';
+  app.innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
+    <div class="page-head"><div><h1>${info?.flag || ''} ${esc(info?.name || standings?.name || league)}</h1>
+      <p>${SPORTS[sport]?.icon || ''} ${SPORTS[sport]?.name || ''}${season ? ` · ${esc(season)}` : ''}</p></div>
+      ${live.length ? `<span class="live-pill">${live.length} live</span>` : ''}</div>
+    <div class="tabs" data-tabgroup="L${esc(league)}">
+      <button class="tab on" data-tab="ltable">Tabelle</button><button class="tab" data-tab="lgames">Spiele</button></div>
+    <div class="tab-panel on" data-panel="ltable">${standingsTable(standings, league, teamId)}</div>
+    <div class="tab-panel" data-panel="lgames">${games.length
+      ? `<div class="card list-card">${games.map(e => matchRow(e, { favIds })).join('')}</div>`
+      : '<div class="card empty-inline">Aktuell keine Spiele in dieser Liga.</div>'}</div>`;
+  if (teamId && !silent) $('tr.me')?.scrollIntoView({ block: 'center' });
+}
+
+function regionalCardHtml(f) {
+  const l = regionalByKey[f.league];
+  const [, lk] = f.league.split('/');
+  const links = regionalTeamLinks(f);
+  const tableLink = l ? regionalLeagueLinks(l)[0] : null;
+  return `<div class="card team-card regional" style="--team:${l?.flag === '🇨🇭' ? '#e3342f' : '#19b874'}" data-href="#/rteam/${lk}/${esc(f.id)}">
+    <div class="tc-head"><span class="tc-badge">${esc(initials(f.name))}</span>
+      <div><div class="tc-name">${esc(f.name)}</div><div class="tc-league">${leagueFlag(f.league)} ${esc(l?.name || '')} · ${esc(l?.region || '')}</div></div>
+      ${starBtn(f)}</div>
+    <div class="tc-body">
+      ${tableLink ? extLink(['Tabelle öffnen', tableLink[1]], 'tc-line tc-ext') : ''}
+      ${extLink(['Spielplan & Ergebnisse', links[0][1]], 'tc-line tc-ext')}
+    </div>
+    <div class="tc-foot"><span class="dim">Externe Daten</span><a class="table-link" href="#/regional/${lk}">${TABLE_ICON}Liga</a></div>
+  </div>`;
+}
+
+async function viewRegionalLeague([lk]) {
+  currentView.refresh = 0;
+  const l = regionalByKey[`regional/${lk}`];
+  if (!l) { location.hash = '#/tables'; return; }
+  const teams = [...REGIONAL_TEAMS, ...favorites.filter(f => f.custom)].filter(t => t.league === l.key);
+  $('#app').innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
+    <div class="page-head"><div><h1>${l.flag} ${esc(l.name)}</h1><p>${esc(l.region)} · ${l.tier}. Liga-Stufe</p></div></div>
+    <div class="card info-card">
+      <p>Für diese Liga gibt es keine frei zugängliche Datenschnittstelle – der Verband sperrt automatische Abrufe. Tabelle und Spiele öffnest du deshalb direkt auf der jeweiligen Seite:</p>
+      <div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div>
+    </div>
+    <section class="section"><div class="section-head"><h2>Teams</h2></div>
+      ${teams.length ? `<div class="card list-card">${teams.map(t => `<div class="rt-row" data-href="#/rteam/${lk}/${esc(t.id)}"><span class="mini-badge lg">${esc(initials(t.name))}</span><span class="nm">${esc(t.name)}</span>${starBtn(t)}</div>`).join('')}</div>` : ''}
+      <div class="card" style="margin-top:14px;padding:18px">${customTeamForm('', l.key)}</div>
+    </section>`;
+}
+
+async function viewRegionalTeam([lk, id]) {
+  currentView.refresh = 0;
+  const key = `regional/${lk}`;
+  const l = regionalByKey[key];
+  const t = favorites.find(f => f.league === key && f.id === id) || REGIONAL_TEAMS.find(x => x.league === key && x.id === id);
+  if (!t || !l) { location.hash = '#/'; return; }
+  const color = l.flag === '🇨🇭' ? '#e3342f' : '#19b874';
+  $('#app').innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
+    <div class="hero" style="--team:${color}"><div class="hero-inner">
+      <span class="tc-badge hero-badge">${esc(initials(t.name))}</span>
+      <div><h1>${esc(t.name)}</h1><div class="sub"><a class="sub-link" href="#/regional/${lk}">${l.flag} ${esc(l.name)} ›</a> · ${esc(l.region)}</div></div>
+      <div class="hero-actions">${starBtn(t)}</div></div></div>
+    <div class="card info-card">
+      <p>Tabelle, Spielplan und Ergebnisse dieses Vereins kommen vom Verband bzw. einem Ergebnisdienst und öffnen sich direkt im Browser:</p>
+      <div class="ext-links">${regionalTeamLinks(t).map(x => extLink(x, 'ext-link big')).join('')}</div>
+    </div>`;
 }
 
 /* ---------- Game ---------- */
@@ -1011,7 +1190,8 @@ function closeSearch() {
 function renderSearchChips() {
   const sports = ['all', ...Object.keys(SPORTS)];
   $('#sportChips').innerHTML = sports.map(s => `<button class="chip ${searchState.sport === s ? 'on' : ''}" data-ssport="${s}">${s === 'all' ? 'Alle Sportarten' : `${SPORTS[s].icon} ${SPORTS[s].name}`}</button>`).join('');
-  const lgs = LEAGUES.filter(l => !l.noSearch && (searchState.sport === 'all' || sportOf(l.key) === searchState.sport));
+  const lgs = searchState.sport === 'regional' ? REGIONAL_LEAGUES
+    : LEAGUES.filter(l => !l.noSearch && (searchState.sport === 'all' || sportOf(l.key) === searchState.sport));
   $('#leagueChips').innerHTML = lgs.length > 1
     ? [`<button class="chip ${searchState.league === 'all' ? 'on' : ''}" data-sleague="all">Alle Ligen</button>`, ...lgs.map(l => `<button class="chip ${searchState.league === l.key ? 'on' : ''}" data-sleague="${l.key}">${l.flag} ${esc(l.name)}</button>`)].join('')
     : '';
@@ -1020,7 +1200,8 @@ function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace
 function renderSearchResults() {
   if (!allTeams) return;
   const q = norm(searchState.q.trim());
-  let list = allTeams.filter(t =>
+  const customs = favorites.filter(f => f.custom);
+  let list = [...allTeams, ...REGIONAL_TEAMS, ...customs].filter(t =>
     (searchState.sport === 'all' || sportOf(t.league) === searchState.sport) &&
     (searchState.league === 'all' || t.league === searchState.league) &&
     (!q || norm(`${t.name} ${t.short} ${t.abbr} ${t.location}`).includes(q)));
@@ -1028,16 +1209,45 @@ function renderSearchResults() {
   const total = list.length;
   list = list.slice(0, 120);
   $('#searchResults').innerHTML = list.length
-    ? list.map(t => `<div class="sr-item">${img(t.logo)}<div><div class="nm">${esc(t.name)}</div>
-        <div class="lg">${SPORTS[sportOf(t.league)].icon} ${esc(leagueByKey[t.league]?.name)}</div></div>${starBtn(t)}</div>`).join('') +
+    ? list.map(t => `<div class="sr-item">${t.regional ? `<span class="mini-badge lg">${esc(initials(t.name))}</span>` : img(t.logo)}<div><div class="nm">${esc(t.name)}</div>
+        <div class="lg">${t.regional ? leagueFlag(t.league) : SPORTS[sportOf(t.league)].icon} ${esc(leagueName(t.league))}</div></div>${starBtn(t)}</div>`).join('') +
       (total > list.length ? `<div class="empty-inline" style="grid-column:1/-1">… ${total - list.length} weitere – grenze die Suche ein</div>` : '')
     : `<div class="empty-inline" style="grid-column:1/-1">Kein Team gefunden für „${esc(searchState.q)}“</div>`;
+  if (searchState.sport === 'regional' || (q && !list.length)) $('#searchResults').innerHTML += customTeamForm(searchState.q.trim(), searchState.league);
 }
+
+function customTeamForm(name = '', league = 'all') {
+  const sel = isRegional(league) ? league : 'regional/ll';
+  return `<form class="custom-form" id="customTeamForm" style="grid-column:1/-1">
+    <div><b>Dein Verein fehlt?</b><p class="muted">Füge jedes Team aus Vorarlberg oder der Ostschweiz selbst hinzu. Tabelle und Spiele öffnest du dann mit einem Tipp.</p></div>
+    <div class="cf-row">
+      <input id="customTeamName" name="name" required maxlength="60" placeholder="Vereinsname, z. B. FC Hard" value="${esc(name)}" autocomplete="off">
+      <select id="customTeamLeague" name="league">${REGIONAL_LEAGUES.map(l => `<option value="${l.key}" ${l.key === sel ? 'selected' : ''}>${l.flag} ${esc(l.name)}</option>`).join('')}</select>
+      <button class="btn" type="submit">Hinzufügen</button>
+    </div></form>`;
+}
+
+document.addEventListener('submit', ev => {
+  if (ev.target.id !== 'customTeamForm') return;
+  ev.preventDefault();
+  const name = $('#customTeamName').value.trim();
+  const league = $('#customTeamLeague').value;
+  if (!name || !regionalByKey[league]) return;
+  const slug = norm(name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'team';
+  const team = { ...rteam(league, `eigen-${slug}-${Date.now().toString(36)}`, name, name), custom: true };
+  toggleFav(team);
+  searchState.q = ''; $('#searchInput').value = '';
+  renderSearchResults();
+});
 
 /* ---------- Router & refresh ---------- */
 const routes = [
   [/^#\/?$/, viewHome, 'home'],
   [/^#\/live\/?$/, viewLive, 'live'],
+  [/^#\/tables\/?$/, viewTables, 'tables'],
+  [/^#\/league\/([^/]+)\/([^/]+)(?:\/([^/]+))?$/, viewLeague, 'tables'],
+  [/^#\/regional\/([^/]+)$/, viewRegionalLeague, 'tables'],
+  [/^#\/rteam\/([^/]+)\/([^/]+)$/, viewRegionalTeam, 'team'],
   [/^#\/team\/([^/]+)\/([^/]+)\/([^/]+)$/, viewTeam, 'team'],
   [/^#\/game\/([^/]+)\/([^/]+)\/([^/]+)$/, viewGame, 'game'],
 ];
@@ -1079,6 +1289,7 @@ function setLiveDot(on) { $('#navLiveDot').hidden = !on; }
 
 /* ---------- Events ---------- */
 document.addEventListener('click', ev => {
+  if (ev.target.closest('a[href]') && !ev.target.closest('[data-fav]')) return;
   const fav = ev.target.closest('[data-fav]');
   if (fav) {
     ev.preventDefault(); ev.stopPropagation();
