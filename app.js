@@ -51,8 +51,8 @@ const REGIONAL_LEAGUES = [
     source: { type: 'wiki', page: () => 'Eliteliga Vorarlberg', heading: () => new RegExp(`^==+\\s*Tabelle\\s*${seasonStr().replace('/', '\\/')}\\s*==+`, 'm') },
     links: [['Tabelle & Spiele', `${SW}/austria/regionalliga-west-vorarlberg/standings/`]] },
   { key: 'regional/vbgl', name: 'Vorarlbergliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 5,
-    links: [['Tabelle & Spiele', `${SW}/austria/vorarlberg/standings/`]] },
-  { key: 'regional/ll', name: 'Landesliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 6, links: [],
+    links: [['Tabelle (Ligaportal)', 'https://www.ligaportal.at/vbg/vorarlbergliga/tabelle'], ['Tabelle & Spiele (Soccerway)', `${SW}/austria/vorarlberg/standings/`]] },
+  { key: 'regional/ll', name: 'Landesliga', region: 'Vorarlberg', flag: '🇦🇹', tier: 6, links: [['Tabelle (Ligaportal)', 'https://www.ligaportal.at/vbg/landesliga/tabelle']],
     source: { type: 'wiki', page: () => 'Landesliga (Vorarlberg)', heading: () => new RegExp(`^==+\\s*Tabelle\\s*${seasonStr().replace('/', '\\/')}\\s*==+`, 'm') } },
   { key: 'regional/1lk', name: '1. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 7, links: [] },
   { key: 'regional/2lk', name: '2. Landesklasse', region: 'Vorarlberg', flag: '🇦🇹', tier: 8, links: [] },
@@ -94,7 +94,45 @@ function parseWikiRow(raw) {
     gf: n('ET'), ga: n('GT'), pts: 3 * w + d - n('Abzug'),
     note: /^ccffcc|^90ee90|^aaffaa/i.test(p.Farbe || '') ? 'up' : /^ffcccc|^ffaaaa/i.test(p.Farbe || '') ? 'down' : '' };
 }
+// Von dir eingefügte Tabellen (kopiert aus Ligaportal, ÖFB, VOL.AT …) – nur auf diesem Gerät gespeichert
+const manualKey = key => `fk.rtable.${key}`;
+function manualTable(l) {
+  const t = store.get(manualKey(l.key), null);
+  if (!t?.rows?.length || t.season !== seasonStr()) return null;
+  return { rows: t.rows, season: t.season, updated: t.savedAt, manual: true,
+    source: { label: 'von dir eingefügt', url: (l.links[0] || regionalLeagueLinks(l)[0])[1] } };
+}
+function parsePastedTable(text) {
+  const flat = String(text).replace(/\r/g, '').replace(/−/g, '-').replace(/[\t ]+/g, ' ');
+  const re = /(?:^|\s)(\d{1,2})[.)]?\s+([^\d\s][^\n]*?)\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,3})\s*:\s*(\d{1,3})\s+(?:[+-]?\d{1,3}\s+)?(-?\d{1,3})(?=\s|$)/g;
+  const tryParse = src => {
+    const rows = [];
+    for (const m of src.matchAll(re)) {
+      const [, rank, team, P, W, D, L, gf, ga, pts] = m;
+      const r = { rank: +rank, team: team.replace(/\s+/g, ' ').trim(), p: +P, w: +W, d: +D, l: +L, gf: +gf, ga: +ga, pts: +pts };
+      if (r.w + r.d + r.l !== r.p || r.pts > 3 * r.p + 3 || r.team.length < 2) continue;
+      if (!rows.some(x => x.rank === r.rank && x.team === r.team)) rows.push(r);
+    }
+    return rows;
+  };
+  let rows = tryParse(flat);                       // eine Zeile pro Team
+  if (rows.length < 4) rows = tryParse(flat.replace(/\n+/g, ' '));   // jede Zelle in eigener Zeile
+  return rows.sort((a, b) => a.rank - b.rank);
+}
+function pasteFormHtml(l, open = true) {
+  const link = (l.links[0] || regionalLeagueLinks(l)[0]);
+  return `<details class="card paste-card" ${open ? 'open' : ''}><summary><b>Tabelle einfügen</b><span class="dim">nur auf diesem Gerät gespeichert</span></summary>
+    <ol class="paste-steps"><li>Öffne die Tabelle: ${extLink(link, 'inline-link')}</li><li>Markiere die ganze Tabelle und kopiere sie.</li><li>Füge sie hier ein – Anpfiff erkennt die Zeilen automatisch.</li></ol>
+    <form class="paste-form" data-league="${l.key}">
+      <textarea id="pasteText-${l.key.split('/')[1]}" rows="6" placeholder="z. B.&#10;1  SC Fussach  11  8  2  1  28:8  +20  26&#10;2  FC Koblach  11  7  1  3  25:14  +11  22"></textarea>
+      <div class="cf-row"><button class="btn" type="submit">Tabelle übernehmen</button><span class="paste-msg dim" role="status"></span></div>
+    </form></details>`;
+}
 async function loadRegionalTable(l) {
+  const auto = await loadAutoTable(l);
+  return auto || (l ? manualTable(l) : null);
+}
+async function loadAutoTable(l) {
   const src = l?.source;
   if (!src) return null;
   try {
@@ -135,7 +173,9 @@ function regionalTableHtml(table, leagueKey) {
   const upd = table.updated ? ` · Stand ${new Date(table.updated).toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
   return `<div class="card section"><div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>
     <th>Sp</th><th>S</th><th>U</th><th>N</th><th>Tore</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="table-source">Quelle: <a href="${esc(table.source?.url || '#')}" target="_blank" rel="noopener">${esc(table.source?.label || '')}</a>${upd}</div></div>`;
+    <div class="table-source">${table.manual
+      ? `Von dir eingefügt${upd} · <button class="link-btn" data-action="clear-table" data-league="${leagueKey}">Entfernen</button>`
+      : `Quelle: <a href="${esc(table.source?.url || '#')}" target="_blank" rel="noopener">${esc(table.source?.label || '')}</a>${upd}`}</div></div>`;
 }
 const isRegional = key => String(key || '').startsWith('regional/');
 const leagueName = key => leagueByKey[key]?.name || regionalByKey[key]?.name || key;
@@ -1008,12 +1048,12 @@ async function viewRegionalLeague([lk], { silent } = {}) {
   if (token !== renderToken) return;
   $('#app').innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
     <div class="page-head"><div><h1>${l.flag} ${esc(l.name)}</h1><p>${esc(l.region)} · ${l.tier}. Liga-Stufe · Saison ${esc(table?.season || seasonStr())}</p></div></div>
-    ${table ? `<section class="section"><div class="section-head"><h2>Tabelle</h2><span class="count">${table.rows.length} Teams</span></div>${regionalTableHtml(table, l.key)}</section>
+    ${table ? `<section class="section"><div class="section-head"><h2>Tabelle</h2><span class="count">${table.rows.length} Teams</span></div>${regionalTableHtml(table, l.key)}${table.manual ? pasteFormHtml(l, false).replace('<b>Tabelle einfügen</b>', '<b>Neuere Tabelle einfügen</b>') : ''}</section>
       <section class="section"><div class="section-head"><h2>Spiele & mehr</h2></div><div class="card info-card"><div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div></div></section>`
-    : `<div class="card info-card">
-      <p>Für diese Liga gibt es derzeit keine frei zugängliche Tabelle – der ÖFB sperrt automatische Abrufe. Sobald Wikipedia eine Tabelle für ${esc(seasonStr())} führt, erscheint sie hier automatisch. Bis dahin öffnest du Tabelle und Spiele direkt auf der jeweiligen Seite:</p>
-      <div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div>
-    </div>`}
+    : `<section class="section"><div class="section-head"><h2>Tabelle</h2></div>
+      <p class="muted lead-note">Für diese Liga gibt es keine frei zugängliche Datenquelle – ÖFB und Ergebnisportale sperren automatische Abrufe. Kopiere die Tabelle einfach einmal aus deinem Browser hierher, dann siehst du sie direkt in der App (sobald Wikipedia eine Tabelle für ${esc(seasonStr())} führt, erscheint sie automatisch).</p>
+      ${pasteFormHtml(l, true)}</section>
+      <section class="section"><div class="section-head"><h2>Spiele & mehr</h2></div><div class="card info-card"><div class="ext-links">${regionalLeagueLinks(l).map(x => extLink(x, 'ext-link big')).join('')}</div></div></section>`}
     <section class="section"><div class="section-head"><h2>Teams</h2></div>
       ${teams.length ? `<div class="card list-card">${teams.map(t => `<div class="rt-row" data-href="#/rteam/${lk}/${esc(t.id)}"><span class="mini-badge lg">${esc(initials(t.name))}</span><span class="nm">${esc(t.name)}</span>${starBtn(t)}</div>`).join('')}</div>` : ''}
       <div class="card" style="margin-top:14px;padding:18px">${customTeamForm('', l.key)}</div>
@@ -1041,7 +1081,7 @@ async function viewRegionalTeam([lk, id], { silent } = {}) {
         .map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>` : ''}</div>
     ${row ? `<section class="section"><div class="section-head"><h2>Tabelle ${esc(l.name)}</h2></div>${regionalTableHtml(table, l.key)}</section>` : ''}
     <div class="card info-card">
-      <p>${row ? 'Spielplan und Einzelergebnisse öffnest du direkt beim Verband bzw. Ergebnisdienst:' : 'Tabelle, Spielplan und Ergebnisse dieses Vereins kommen vom Verband bzw. einem Ergebnisdienst und öffnen sich direkt im Browser:'}</p>
+      <p>${row ? 'Spielplan und Einzelergebnisse öffnest du direkt beim Verband bzw. Ergebnisdienst:' : `Noch keine Tabelle für diese Liga in der App. <a class="inline-link" href="#/regional/${lk}">Tabelle einfügen ›</a> – oder direkt beim Verband bzw. Ergebnisdienst öffnen:`}</p>
       <div class="ext-links">${regionalTeamLinks(t).map(x => extLink(x, 'ext-link big')).join('')}</div>
     </div>`;
   if (row && !silent) $('tr.me')?.scrollIntoView({ block: 'nearest' });
@@ -1338,6 +1378,22 @@ function customTeamForm(name = '', league = 'all') {
 }
 
 document.addEventListener('submit', ev => {
+  if (ev.target.classList.contains('paste-form')) {
+    ev.preventDefault();
+    const key = ev.target.dataset.league;
+    const l = regionalByKey[key];
+    const ta = ev.target.querySelector('textarea');
+    const msg = ev.target.querySelector('.paste-msg');
+    const rows = parsePastedTable(ta.value);
+    if (rows.length < 4) {
+      msg.textContent = 'Keine Tabelle erkannt. Kopiere die komplette Tabelle mit Platz, Spielen, S/U/N, Toren (z. B. 28:8) und Punkten.';
+      return;
+    }
+    store.set(manualKey(key), { rows, season: seasonStr(), savedAt: new Date().toISOString() });
+    toast(`Tabelle ${l?.name || ''} gespeichert (${rows.length} Teams)`);
+    renderToken++; route();
+    return;
+  }
   if (ev.target.id !== 'customTeamForm') return;
   ev.preventDefault();
   const name = $('#customTeamName').value.trim();
@@ -1439,6 +1495,7 @@ document.addEventListener('click', ev => {
     else if (a === 'close-search') closeSearch();
     else if (a === 'back') { if (history.length > 1) history.back(); else location.hash = '#/'; }
     else if (a === 'reload' || a === 'go-home') route();
+    else if (a === 'clear-table') { try { localStorage.removeItem(manualKey(act.dataset.league)); } catch {} toast('Eingefügte Tabelle entfernt'); renderToken++; route(); }
     else if (a === 'toggle-theme') {
       const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = next; store.set('fk.theme', next);
