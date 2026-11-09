@@ -27,6 +27,7 @@ const LEAGUES = [
   { key: 'soccer/aut.1', name: 'Österr. Bundesliga', flag: '🇦🇹' },
   { key: 'soccer/uefa.champions', name: 'Champions League', flag: '🇪🇺', noSearch: true },
   { key: 'soccer/uefa.europa', name: 'Europa League', flag: '🇪🇺', noSearch: true },
+  { key: 'soccer/uefa.nations', name: 'Nations League', flag: '🇪🇺' },
   { key: 'basketball/nba', name: 'NBA', flag: '🇺🇸' },
   { key: 'football/nfl', name: 'NFL', flag: '🇺🇸' },
   { key: 'hockey/nhl', name: 'NHL', flag: '🇺🇸' },
@@ -291,9 +292,24 @@ const DE_NAMES = [
   ['Internazionale', 'Inter Mailand'], ['Inter Milan', 'Inter Mailand'], ['AC Milan', 'AC Mailand'], ['Rapid Vienna', 'Rapid Wien'], ['Austria Vienna', 'Austria Wien'],
   ['Munich', 'München'],
 ];
+// Nationalteams: nur exakte JSON-Werte ersetzen ("Austria"), damit z. B. "Austria Lustenau" unverändert bleibt
+const DE_COUNTRIES = {
+  'Austria': 'Österreich', 'Switzerland': 'Schweiz', 'Germany': 'Deutschland', 'Italy': 'Italien', 'Spain': 'Spanien',
+  'France': 'Frankreich', 'Netherlands': 'Niederlande', 'Belgium': 'Belgien', 'Croatia': 'Kroatien', 'Denmark': 'Dänemark',
+  'Norway': 'Norwegen', 'Sweden': 'Schweden', 'Finland': 'Finnland', 'Iceland': 'Island', 'Poland': 'Polen',
+  'Czechia': 'Tschechien', 'Czech Republic': 'Tschechien', 'Slovakia': 'Slowakei', 'Slovenia': 'Slowenien', 'Hungary': 'Ungarn',
+  'Romania': 'Rumänien', 'Bulgaria': 'Bulgarien', 'Greece': 'Griechenland', 'Türkiye': 'Türkei', 'Turkey': 'Türkei',
+  'Serbia': 'Serbien', 'Bosnia-Herzegovina': 'Bosnien-Herzegowina', 'Bosnia and Herzegovina': 'Bosnien-Herzegowina',
+  'North Macedonia': 'Nordmazedonien', 'Albania': 'Albanien', 'Scotland': 'Schottland', 'Northern Ireland': 'Nordirland',
+  'Republic of Ireland': 'Irland', 'Ireland': 'Irland', 'Georgia': 'Georgien', 'Armenia': 'Armenien', 'Azerbaijan': 'Aserbaidschan',
+  'Kazakhstan': 'Kasachstan', 'Cyprus': 'Zypern', 'Lithuania': 'Litauen', 'Latvia': 'Lettland', 'Estonia': 'Estland',
+  'Moldova': 'Moldau', 'Luxembourg': 'Luxemburg', 'Faroe Islands': 'Färöer',
+  'Rep Ireland': 'Irland', 'N Ireland': 'Nordirland', 'Bosnia-Herz': 'Bosnien-H.',
+};
+const DE_COUNTRY_RE = new RegExp(`"(${Object.keys(DE_COUNTRIES).sort((a, b) => b.length - a.length).join('|')})"`, 'g');
 function germanize(text) {
   for (const [en, de] of DE_NAMES) if (text.includes(en)) text = text.split(en).join(de);
-  return text;
+  return text.replace(DE_COUNTRY_RE, (_, en) => `"${DE_COUNTRIES[en]}"`);
 }
 
 /* ---------- Helpers ---------- */
@@ -445,7 +461,7 @@ function goalsFromSummary(sum) {
 
 async function loadAllTeams() {
   const cached = store.get('fk.teams', null);
-  if (cached && cached.v === 3 && Date.now() - cached.t < 864e5 * 3) return cached.teams;
+  if (cached && cached.v === 4 && Date.now() - cached.t < 864e5 * 3) return cached.teams;
   // Die /teams-Endpunkte erlauben kein CORS – die Tabellen enthalten aber alle Teams.
   const lists = await Promise.all(LEAGUES.filter(l => !l.noSearch).map(async l => {
     const d = await safe(get(`${API2}/${l.key}/standings`, 864e5));
@@ -456,7 +472,7 @@ async function loadAllTeams() {
     }));
   }));
   const teams = lists.flat();
-  if (teams.length) store.set('fk.teams', { v: 3, t: Date.now(), teams });
+  if (teams.length) store.set('fk.teams', { v: 4, t: Date.now(), teams });
   return teams;
 }
 
@@ -830,7 +846,7 @@ async function viewTeam([sport, lg, id], { silent } = {}) {
       <div class="hero-inner">
         ${img(team.logo, 'hero-logo')}
         <div><h1>${esc(team.name)}</h1>
-          <div class="sub"><a class="sub-link" href="#/league/${sport}/${lg}/${id}">${SPORTS[sport].icon} ${esc(lgName)} ›</a>${rank ? ` · Platz ${esc(rank)}${entry?.group?.name && !isSoccer ? ` in der ${esc(entry.group.name)}` : ''}` : ''} ${formDots(events, id)}</div></div>
+          <div class="sub"><a class="sub-link" href="#/league/${sport}/${lg}/${id}">${SPORTS[sport].icon} ${esc(lgName)} ›</a>${rank ? ` · Platz ${esc(rank)}${entry?.group?.name && !isSoccer ? ` in der ${esc(entry.group.name)}` : /^Gruppe /.test(entry?.group?.name || '') ? ` in ${esc(entry.group.name)}` : ''}` : ''} ${formDots(events, id)}</div></div>
         <div class="hero-actions">${starBtn(team)}</div>
       </div>
       <div class="hero-kpis">${kpis.map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>
@@ -925,7 +941,7 @@ function scorerList(map) {
 /* ---------- Standings ---------- */
 function collectGroups(node, out = [], name) {
   if (!node) return out;
-  if (node.standings?.entries?.length) out.push({ name: node.name || name, entries: node.standings.entries });
+  if (node.standings?.entries?.length) out.push({ name: String(node.name || name || '').replace(/^Group\b/, 'Gruppe'), entries: node.standings.entries });
   (node.children || []).forEach(c => collectGroups(c, out, c.name));
   return out;
 }
@@ -947,6 +963,16 @@ function findStandingEntry(data, id) {
   }
   return null;
 }
+const NOTE_DE = {
+  'A: Qualifies for QFs; B-D: Promotion playoffs': 'A: Viertelfinale · B–D: Aufstiegs-Playoffs',
+  'A: Qualifies for QFs; B-D: Promotion': 'A: Viertelfinale · B–D: Aufstieg',
+  'A, B: Relegation playoffs': 'A, B: Abstiegs-Playoffs',
+  'A, B: Relegation; C: Relegation or playoffs': 'A, B: Abstieg · C: Abstieg oder Playoffs',
+  'Champions League qualifying': 'Champions-League-Quali', 'Europa League qualifying': 'Europa-League-Quali',
+  'Conference League qualifying': 'Conference-League-Quali', 'Relegation playoff': 'Relegation', 'Relegation playoffs': 'Relegation',
+  'Relegation': 'Abstieg', 'Promotion': 'Aufstieg', 'Promotion playoff': 'Aufstiegs-Relegation', 'Promotion playoffs': 'Aufstiegs-Relegation',
+};
+const legendHtml = items => items.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${items.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(NOTE_DE[d] || d)}</span>`).join('')}</div>` : '';
 function standingsTable(data, league, id) {
   const groups = collectGroups(data);
   if (!groups.length) return '<div class="card empty-inline">Keine Tabelle verfügbar</div>';
@@ -959,6 +985,9 @@ function standingsTable(data, league, id) {
   // Gruppe mit dem Team zuerst
   groups.sort((a, b) => (b.entries.some(e => String(e.team?.id) === String(id)) - a.entries.some(e => String(e.team?.id) === String(id))));
   const [sp, lg] = league.split('/');
+  // Viele Gruppen (Nations League): Legende nur einmal unter allen Tabellen
+  const sharedLegend = groups.length > 4;
+  const legendOf = list => [...new Map(list.filter(e => e.note?.color).map(e => [e.note.color + '|' + e.note.description, [e.note.color, e.note.description]])).values()];
   return groups.map(g => {
     const rows = sortEntries(g.entries).map((e, i) => {
       const s = n => e.stats?.find(x => x.name === n);
@@ -973,13 +1002,13 @@ function standingsTable(data, league, id) {
         <td class="rank l" ${note}>${i + 1}</td>
         <td class="l"><div class="tm">${img(logoOf(e.team))}${esc(e.team?.shortDisplayName || e.team?.displayName)}${fav ? ' <span class="fav-mark">★</span>' : ''}</div></td>${cells}</tr>`;
     }).join('');
-    const legend = [...new Map(g.entries.filter(e => e.note?.color).map(e => [e.note.color, e.note.description])).entries()];
+    const legend = sharedLegend ? [] : legendOf(g.entries);
     return `<div class="card section">${groups.length > 1 ? `<div class="group-title">${esc(g.name || '')}</div>` : ''}
       <div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>${cols.map(c => `<th class="${c[2] ? 'mh' : ''}">${c[1]}</th>`).join('')}</tr></thead>
       <tbody>${rows}</tbody></table></div>
-      ${legend.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${legend.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(d)}</span>`).join('')}</div>` : ''}
+      ${legendHtml(legend)}
     </div>`;
-  }).join('');
+  }).join('') + (sharedLegend ? `<div class="card section">${legendHtml(legendOf(groups.flatMap(g => g.entries)))}</div>` : '');
 }
 
 /* ---------- Tabellen ---------- */
