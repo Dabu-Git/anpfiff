@@ -1561,9 +1561,16 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && cu
 window.addEventListener('hashchange', () => route());
 
 /* ---------- Init ---------- */
+// Design: eigene Wahl hat Vorrang, sonst folgt die App live dem System (hell/dunkel)
 const savedTheme = store.get('fk.theme', null);
+const lightMq = window.matchMedia?.('(prefers-color-scheme: light)');
+function applySystemTheme() {
+  if (store.get('fk.theme', null)) return;
+  document.documentElement.dataset.theme = lightMq?.matches ? 'light' : 'dark';
+}
 if (savedTheme) document.documentElement.dataset.theme = savedTheme;
-else if (window.matchMedia?.('(prefers-color-scheme: light)').matches) document.documentElement.dataset.theme = 'light';
+else applySystemTheme();
+lightMq?.addEventListener?.('change', applySystemTheme);
 liveState.filter = store.get('fk.liveFilter', 'fav');
 favorites.forEach(f => { f.name = germanize(f.name || ''); });
 route();
