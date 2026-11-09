@@ -714,3 +714,11 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .ext-link.big:hover { border-color: var(--line); }
   .table-link:hover { background: color-mix(in srgb, var(--accent) 16%, var(--card-2)); }
 }
+/* Tabellen auf dem Handy: Platz, Team, Spiele, Differenz und Punkte immer sichtbar */
+@media (max-width: 560px) {
+  .standings .mh { display: none; }
+  .standings th, .standings td { padding: 10px 7px; }
+  .standings .rank { width: 34px; padding-left: 14px; }
+  .standings .tm { gap: 8px; }
+  .standings td.l .tm { white-space: normal; line-height: 1.25; }
+}

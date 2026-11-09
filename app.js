@@ -168,11 +168,11 @@ function regionalTableHtml(table, leagueKey) {
     return `<tr class="${fav ? 'me' : ''} ${known ? 'clickable' : ''}" ${known ? `data-href="#/rteam/${lk}/${esc(known.id)}"` : ''}>
       <td class="rank l" ${note}>${r.rank}</td>
       <td class="l"><div class="tm"><span class="mini-badge">${esc(initials(r.team))}</span>${esc(r.team)}${fav ? ' <span class="fav-mark">★</span>' : ''}</div></td>
-      <td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf}:${r.ga}</td><td>${diff > 0 ? '+' : ''}${diff}</td><td class="pts">${r.pts}</td></tr>`;
+      <td>${r.p}</td><td class="mh">${r.w}</td><td class="mh">${r.d}</td><td class="mh">${r.l}</td><td class="mh">${r.gf}:${r.ga}</td><td>${diff > 0 ? '+' : ''}${diff}</td><td class="pts">${r.pts}</td></tr>`;
   }).join('');
   const upd = table.updated ? ` · Stand ${new Date(table.updated).toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
   return `<div class="card section"><div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>
-    <th>Sp</th><th>S</th><th>U</th><th>N</th><th>Tore</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <th>Sp</th><th class="mh">S</th><th class="mh">U</th><th class="mh">N</th><th class="mh">Tore</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="table-source">${table.manual
       ? `Von dir eingefügt${upd} · <button class="link-btn" data-action="clear-table" data-league="${leagueKey}">Entfernen</button>`
       : `Quelle: <a href="${esc(table.source?.url || '#')}" target="_blank" rel="noopener">${esc(table.source?.label || '')}</a>${upd}`}</div></div>`;
@@ -952,19 +952,19 @@ function standingsTable(data, league, id) {
   if (!groups.length) return '<div class="card empty-inline">Keine Tabelle verfügbar</div>';
   const sport = sportOf(league);
   const cols = sport === 'soccer'
-    ? [['gamesPlayed', 'Sp'], ['wins', 'S'], ['ties', 'U'], ['losses', 'N'], ['_goals', 'Tore'], ['pointDifferential', 'Diff'], ['points', 'Pkt']]
+    ? [['gamesPlayed', 'Sp'], ['wins', 'S', true], ['ties', 'U', true], ['losses', 'N', true], ['_goals', 'Tore', true], ['pointDifferential', 'Diff'], ['points', 'Pkt']]
     : sport === 'hockey'
-      ? [['gamesPlayed', 'Sp'], ['wins', 'S'], ['losses', 'N'], ['otLosses', 'OTN'], ['pointDifferential', 'Diff'], ['points', 'Pkt']]
-      : [['wins', 'S'], ['losses', 'N'], ['winPercent', 'Quote'], ['gamesBehind', 'GB'], ['streak', 'Serie']];
+      ? [['gamesPlayed', 'Sp'], ['wins', 'S', true], ['losses', 'N', true], ['otLosses', 'OTN', true], ['pointDifferential', 'Diff'], ['points', 'Pkt']]
+      : [['wins', 'S'], ['losses', 'N'], ['winPercent', 'Quote'], ['gamesBehind', 'GB', true], ['streak', 'Serie', true]];
   // Gruppe mit dem Team zuerst
   groups.sort((a, b) => (b.entries.some(e => String(e.team?.id) === String(id)) - a.entries.some(e => String(e.team?.id) === String(id))));
   const [sp, lg] = league.split('/');
   return groups.map(g => {
     const rows = sortEntries(g.entries).map((e, i) => {
       const s = n => e.stats?.find(x => x.name === n);
-      const cells = cols.map(([n]) => {
-        if (n === '_goals') return `<td>${s('pointsFor')?.displayValue ?? '-'}:${s('pointsAgainst')?.displayValue ?? '-'}</td>`;
-        return `<td class="${n === 'points' ? 'pts' : ''}">${esc(s(n)?.displayValue ?? '-')}</td>`;
+      const cells = cols.map(([n, , mh]) => {
+        if (n === '_goals') return `<td class="${mh ? 'mh' : ''}">${s('pointsFor')?.displayValue ?? '-'}:${s('pointsAgainst')?.displayValue ?? '-'}</td>`;
+        return `<td class="${n === 'points' ? 'pts' : ''} ${mh ? 'mh' : ''}">${esc(s(n)?.displayValue ?? '-')}</td>`;
       }).join('');
       const me = String(e.team?.id) === String(id);
       const fav = !me && isFav(league, e.team?.id);
@@ -975,7 +975,7 @@ function standingsTable(data, league, id) {
     }).join('');
     const legend = [...new Map(g.entries.filter(e => e.note?.color).map(e => [e.note.color, e.note.description])).entries()];
     return `<div class="card section">${groups.length > 1 ? `<div class="group-title">${esc(g.name || '')}</div>` : ''}
-      <div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead>
+      <div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>${cols.map(c => `<th class="${c[2] ? 'mh' : ''}">${c[1]}</th>`).join('')}</tr></thead>
       <tbody>${rows}</tbody></table></div>
       ${legend.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${legend.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(d)}</span>`).join('')}</div>` : ''}
     </div>`;
