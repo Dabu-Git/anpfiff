@@ -670,3 +670,47 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .nav a, .nav-add { font-size: 10px; white-space: nowrap; padding: 8px 2px; }
   .form i { width: 20px; height: 20px; }
 }
+
+/* ---------- Untere Leiste (Handy) als eigenes Element ---------- */
+.tabbar { display: none; }
+@media (max-width: 760px) {
+  .topbar .nav { display: none !important; }
+  .tabbar {
+    display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 60;
+    gap: 4px; padding: 6px; justify-content: space-around; border-radius: 22px; box-shadow: var(--shadow);
+    background: var(--bg-2); background: color-mix(in srgb, var(--bg-2) 90%, transparent);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid var(--line-2);
+  }
+  .tabbar a, .tabbar .nav-add {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px; border-radius: 16px;
+    font: inherit; font-size: 11px; font-weight: 600; color: var(--text-2); background: none; border: 0; margin: 0;
+    position: relative; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  }
+  .tabbar svg { width: 18px; height: 18px; }
+  .tabbar a.active { color: var(--text); background: var(--card-2); }
+  .tabbar .nav-add { color: var(--accent); }
+  .tabbar .nav-live-dot { position: absolute; top: 6px; right: calc(50% - 16px); }
+  .container { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 360px) {
+  .tabbar a, .tabbar .nav-add { font-size: 10px; white-space: nowrap; padding: 8px 2px; }
+}
+
+/* ---------- Meldung (Toast): mittig, einzeilig ---------- */
+.toast {
+  white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis;
+  animation: toastIn .2s ease both;
+}
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 760px) { .toast { bottom: calc(100px + env(safe-area-inset-bottom)); } }
+
+/* ---------- Kleinigkeiten aus dem Safari-Test ---------- */
+.section-head .count { background: var(--card-2); background: color-mix(in srgb, var(--accent) 16%, var(--card-2)); color: var(--text); }
+@media (hover: none) {
+  .pop-chip:hover { border-color: var(--line); }
+  .pop-chip.on:hover { border-color: #fbbf24; }
+  .chip:hover { color: var(--text-2); }
+  .chip.on:hover { color: var(--bg); }
+  .ext-link.big:hover { border-color: var(--line); }
+  .table-link:hover { background: color-mix(in srgb, var(--accent) 16%, var(--card-2)); }
+}

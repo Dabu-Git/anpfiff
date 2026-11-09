@@ -1491,7 +1491,7 @@ function scheduleRefresh() {
   }, ms);
 }
 
-function setLiveDot(on) { $('#navLiveDot').hidden = !on; }
+function setLiveDot(on) { document.querySelectorAll('.nav-live-dot').forEach(d => { d.hidden = !on; }); }
 
 /* ---------- Events ---------- */
 document.addEventListener('click', ev => {

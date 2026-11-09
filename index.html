@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=19">
+  <link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
   <header class="topbar">
@@ -34,7 +34,7 @@
         <a href="#/live" data-nav="live">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4"/></svg>
           <span>Spieltag</span>
-          <i class="nav-live-dot" id="navLiveDot" hidden></i>
+          <i class="nav-live-dot" hidden></i>
         </a>
         <a href="#/tables" data-nav="tables">
           <svg viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm2 2v3h14V6H5zm0 5v3h6v-3H5zm8 0v3h6v-3h-6zm-8 5v2h6v-2H5zm8 0v2h6v-2h-6z"/></svg>
@@ -53,6 +53,27 @@
   </header>
 
   <main id="app" class="container"></main>
+
+  <!-- Untere Leiste für Handys: bewusst außerhalb der Kopfzeile, sonst nimmt Safari keine Tipps an -->
+  <nav class="tabbar" aria-label="Navigation">
+    <a href="#/" data-nav="home">
+      <svg viewBox="0 0 24 24"><path d="M12 17.3l-6.2 3.6 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7z"/></svg>
+      <span>Meine Teams</span>
+    </a>
+    <a href="#/live" data-nav="live">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4"/></svg>
+      <span>Spieltag</span>
+      <i class="nav-live-dot" hidden></i>
+    </a>
+    <a href="#/tables" data-nav="tables">
+      <svg viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm2 2v3h14V6H5zm0 5v3h6v-3H5zm8 0v3h6v-3h-6zm-8 5v2h6v-2H5zm8 0v2h6v-2h-6z"/></svg>
+      <span>Tabellen</span>
+    </a>
+    <button class="nav-add" type="button" data-action="open-search">
+      <svg viewBox="0 0 24 24"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></svg>
+      <span>Hinzufügen</span>
+    </button>
+  </nav>
 
   <div class="modal" id="searchModal" hidden>
     <div class="modal-backdrop" data-action="close-search"></div>
@@ -78,6 +99,6 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
