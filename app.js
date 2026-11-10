@@ -1389,14 +1389,63 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
   ];
   const tab = gameTabs[eventId] || (pre ? 'info' : 'timeline');
 
+  const highlights = highlightsBlock(sum, e, homeTeam.displayName || H.name, awayTeam.displayName || A.name);
+
   app.innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>${hero}
     ${lines ? `<div class="card cmp" style="margin-top:16px">${lines}</div>` : ''}
+    ${highlights}
     <div class="tabs" style="margin-top:20px" data-tabgroup="g${esc(eventId)}">${tabs.map(([k, n]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
     <div class="tab-panel ${tab === 'timeline' ? 'on' : ''}" data-panel="timeline">${timeline || `<div class="card empty-inline">${pre ? 'Das Spiel hat noch nicht begonnen.' : 'Kein Spielverlauf verfügbar.'}</div>`}</div>
     <div class="tab-panel ${tab === 'stats' ? 'on' : ''}" data-panel="stats">${stats || `<div class="card empty-inline">${pre ? 'Statistiken gibt es ab Anpfiff.' : 'Keine Statistiken verfügbar.'}</div>`}</div>
     <div class="tab-panel ${tab === 'lineups' ? 'on' : ''}" data-panel="lineups">${lineups || '<div class="card empty-inline">Noch keine Daten verfügbar.</div>'}</div>
     <div class="tab-panel ${tab === 'info' ? 'on' : ''}" data-panel="info">${info}</div>
     ${live ? `<p class="updated" style="justify-content:center;margin-top:20px">Live – aktualisiert alle 20 s · zuletzt ${timeOf(new Date())}</p>` : ''}`;
+}
+
+/* Highlights nach dem Spiel:
+ * - ESPN liefert für NBA, NFL, NHL und MLB eigene Clips mit → direkt in der App abspielen
+ * - für alle Spiele zusätzlich eine Suche auf YouTube und Google Video (dort laden Ligen und
+ *   Sender wie DAZN, Sky oder die Sportschau ihre Zusammenfassungen hoch) */
+const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg>';
+function highlightsBlock(sum, e, homeName, awayName) {
+  if (!e.completed && e.state !== 'post') return '';
+  const vids = (sum.videos || []).map(v => {
+    const src = v.links?.source || {};
+    return { title: v.headline || '', dur: v.duration, thumb: v.thumbnail, hls: src.HLS?.href, mp4: src.HD?.href || src.href };
+  }).filter(v => v.hls || v.mp4);
+  // Die komplette Zusammenfassung zuerst, danach einzelne Szenen
+  vids.sort((a, b) => /highlights/i.test(b.title) - /highlights/i.test(a.title));
+
+  // Suche auf frische Uploads eingrenzen, damit nicht ältere Duelle derselben Teams oben stehen
+  const days = (Date.now() - new Date(e.date)) / 864e5;
+  const q = `${homeName} ${awayName} Highlights`;
+  const yt = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}${days < 6 ? '&sp=EgIIAw%3D%3D' : days < 28 ? '&sp=EgIIBA%3D%3D' : ''}`;
+  const gv = `https://www.google.com/search?tbm=vid&q=${encodeURIComponent(q)}${days < 6 ? '&tbs=qdr:w' : days < 28 ? '&tbs=qdr:m' : ''}`;
+  const dur = sec => sec ? `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` : '';
+  const clips = vids.slice(0, 8).map(v => `<button class="hl-vid" type="button" data-video='${esc(JSON.stringify({ hls: v.hls, mp4: v.mp4, thumb: v.thumb }))}'>
+      <span class="hl-thumb">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy">` : ''}<i class="hl-play">${PLAY_ICON}</i>${v.dur ? `<em>${dur(v.dur)}</em>` : ''}</span>
+      <span class="hl-title">${esc(v.title)}</span></button>`).join('');
+  return `<section class="card hl-card">
+    <div class="hl-head"><h2>${PLAY_ICON}Highlights</h2>${vids.length ? `<span class="dim">${vids.length} Video${vids.length === 1 ? '' : 's'}</span>` : ''}</div>
+    ${clips ? `<div class="hl-strip">${clips}</div>` : ''}
+    <div class="hl-links">
+      <a class="hl-btn yt" href="${esc(yt)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.7 15.1V8.9l5.8 3.1-5.8 3.1z"/></svg>Auf YouTube suchen</a>
+      <a class="hl-btn" href="${esc(gv)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>Weitere Videos (Google)</a>
+    </div></section>`;
+}
+// Clip antippen: Vorschaubild durch den Player ersetzen (iPhone spielt HLS, sonst MP4)
+function playClip(btn) {
+  let v;
+  try { v = JSON.parse(btn.dataset.video); } catch { return; }
+  document.querySelectorAll('.hl-strip video').forEach(x => x.pause());
+  // Player nicht im <button> lassen (sonst fangen manche Browser die Klicks auf die Bedienelemente ab)
+  const box = document.createElement('div');
+  box.className = 'hl-vid playing';
+  box.innerHTML = `<span class="hl-thumb"><video controls autoplay playsinline preload="auto"${v.thumb ? ` poster="${esc(v.thumb)}"` : ''}>
+    ${v.hls ? `<source src="${esc(v.hls)}" type="application/vnd.apple.mpegurl">` : ''}${v.mp4 ? `<source src="${esc(v.mp4)}" type="video/mp4">` : ''}</video></span>`;
+  box.append(btn.querySelector('.hl-title'));
+  btn.replaceWith(box);
+  box.querySelector('video').play?.()?.catch?.(() => {});
 }
 
 function soccerTimeline(sum, homeId, sport) {
@@ -1735,6 +1784,8 @@ document.addEventListener('click', ev => {
   }
   const tab = ev.target.closest('[data-tab]');
   if (tab) { selectTab(tab); return; }
+  const clip = ev.target.closest('[data-video]');
+  if (clip) { playClip(clip); return; }
   const day = ev.target.closest('[data-day]');
   if (day) { const o = +day.dataset.day; setLiveDay(o, Math.sign(o - liveState.offset)); return; }
   const filter = ev.target.closest('[data-filter]');
