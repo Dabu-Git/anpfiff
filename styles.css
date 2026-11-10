@@ -421,6 +421,12 @@ table.standings { width: 100%; border-collapse: collapse; font-size: 14px; }
 .day.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border-color: transparent; }
 .day.on b { color: #fff; }
 .league-block { margin-bottom: 18px; }
+/* Spieltag: seitlich wischbar, senkrecht normal scrollbar */
+.live-body { touch-action: pan-y pinch-zoom; min-height: 55vh; }
+.live-body.from-r { animation: slideFromR .24s ease-out; }
+.live-body.from-l { animation: slideFromL .24s ease-out; }
+@keyframes slideFromR { from { opacity: 0; transform: translateX(48px); } }
+@keyframes slideFromL { from { opacity: 0; transform: translateX(-48px); } }
 .league-block .lb-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; font-weight: 700; font-size: 14px; }
 .league-block .lb-head .dim { font-weight: 500; font-size: 12.5px; }
 .fav-mark { color: #fbbf24; font-size: 12px; }
@@ -504,7 +510,7 @@ table.standings { width: 100%; border-collapse: collapse; font-size: 14px; }
   .page-head .updated { width: 100%; }
 }
 .linescore img { width: 22px; height: 22px; object-fit: contain; }
-.silent .tab-panel.on, .silent .card { animation: none !important; }
+.silent .tab-panel.on, .silent .card, .silent .live-body { animation: none !important; }
 
 /* Als installierte App (Homescreen/Dock) */
 @media (display-mode: standalone) {

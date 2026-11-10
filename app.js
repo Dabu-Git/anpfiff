@@ -448,7 +448,9 @@ async function loadTeamSchedule(league, id) {
 
 async function loadScoreboard(league, date) {
   const url = `${API}/${league}/scoreboard${date ? `?dates=${date}` : ''}`;
-  const d = await get(url, 20000);
+  const today = new Date(), yest = new Date(); yest.setDate(yest.getDate() - 1);
+  const settled = date && (date < dayKey(yest) || date > dayKey(today));
+  const d = await get(url, settled ? 300000 : 20000);
   return (d.events || []).map(ev => normEvent(ev, league));
 }
 
@@ -699,20 +701,50 @@ async function renderOnboarding() {
 }
 
 /* ---------- Spieltag ---------- */
-let liveState = { offset: 0, filter: 'fav' };
+let liveState = { offset: 0, filter: 'fav', slide: 0 };
+const LIVE_RANGE = 14;   // so viele Tage vor/zurück lässt sich blättern
+
+function liveLeagues() {
+  const favLeagues = [...new Set(favorites.map(f => f.league).filter(l => leagueByKey[l]))];
+  if (liveState.filter === 'fav') return favLeagues.length ? favLeagues : LEAGUES.map(l => l.key);
+  if (liveState.filter === 'all') return LEAGUES.map(l => l.key);
+  return LEAGUES.filter(l => sportOf(l.key) === liveState.filter).map(l => l.key);
+}
+// ESPN ordnet Spiele dem US-Datum zu: NBA/NHL/MLB-Abendspiele laufen bei uns erst nach Mitternacht
+// und stehen deshalb im Board des Vortags. Für US-Ligen beide Tage laden und nach Ortszeit filtern.
+function liveBoards(leagues, date) {
+  const prev = new Date(date); prev.setDate(prev.getDate() - 1);
+  return Promise.all(leagues.map(async l => {
+    if (sportOf(l) === 'soccer') return safe(loadScoreboard(l, dayKey(date)));
+    const [a, b] = await Promise.all([safe(loadScoreboard(l, dayKey(prev))), safe(loadScoreboard(l, dayKey(date)))]);
+    if (!a && !b) return null;
+    const byId = new Map();
+    [...(a || []), ...(b || [])].forEach(e => byId.set(e.id, e));
+    return [...byId.values()];
+  }));
+}
+// Tag wechseln (Tipp auf Tag, Wischen, Pfeiltasten); dir gibt die Richtung der Einblend-Animation an
+function setLiveDay(offset, dir = 0) {
+  offset = Math.max(-LIVE_RANGE, Math.min(LIVE_RANGE, offset));
+  if (offset === liveState.offset) return false;
+  liveState.offset = offset; liveState.slide = dir;
+  renderToken++;
+  viewLive(null, {}).then(scheduleRefresh);
+  return true;
+}
 
 async function viewLive(_, { silent } = {}) {
   const app = $('#app');
   const token = renderToken;
   const date = new Date(); date.setDate(date.getDate() + liveState.offset);
-  const favLeagues = [...new Set(favorites.map(f => f.league).filter(l => leagueByKey[l]))];
-  let leagues;
-  if (liveState.filter === 'fav') leagues = favLeagues.length ? favLeagues : LEAGUES.map(l => l.key);
-  else if (liveState.filter === 'all') leagues = LEAGUES.map(l => l.key);
-  else leagues = LEAGUES.filter(l => sportOf(l.key) === liveState.filter).map(l => l.key);
+  const leagues = liveLeagues();
+  const slide = silent ? 0 : liveState.slide;
+  liveState.slide = 0;
 
+  // 7 Tage zeigen; wer weiter blättert, bekommt das Fenster um den gewählten Tag
   const days = [];
-  for (let i = -3; i <= 3; i++) {
+  const start = Math.abs(liveState.offset) <= 3 ? -3 : liveState.offset - 3;
+  for (let i = start; i <= start + 6; i++) {
     const d = new Date(); d.setDate(d.getDate() + i);
     days.push(`<button class="day ${i === liveState.offset ? 'on' : ''}" data-day="${i}">
       <small>${i === 0 ? 'Heute' : d.toLocaleDateString('de-DE', { weekday: 'short' })}</small><b>${d.getDate()}</b></button>`);
@@ -721,22 +753,12 @@ async function viewLive(_, { silent } = {}) {
   const chips = [['fav', '⭐ Meine Ligen'], ['all', 'Alle'], ...usedSports.map(s => [s, `${SPORTS[s].icon} ${SPORTS[s].name}`])]
     .map(([k, n]) => `<button class="chip ${liveState.filter === k ? 'on' : ''}" data-filter="${k}">${n}</button>`).join('');
 
-  const head = `<div class="page-head"><div><h1>Spieltag</h1><p>${fullDate(date)}</p></div>
+  const head = `<div class="page-head"><div><h1>Spieltag</h1><p>${fullDate(date)}${liveState.offset ? ' · <button class="link-btn" data-day="0">Heute</button>' : ''}</p></div>
     <span class="updated" id="liveUpdated"></span></div>
     <div class="toolbar"><div class="daypicker">${days.join('')}</div><div class="chips">${chips}</div></div>`;
-  if (!silent) app.innerHTML = head + '<div class="spinner"></div>';
+  if (!silent) { app.innerHTML = head + '<div class="live-body"><div class="spinner"></div></div>'; centerDay(); }
 
-  // ESPN ordnet Spiele dem US-Datum zu: NBA/NHL/MLB-Abendspiele laufen bei uns erst nach Mitternacht
-  // und stehen deshalb im Board des Vortags. Für US-Ligen beide Tage laden und nach Ortszeit filtern.
-  const prev = new Date(date); prev.setDate(prev.getDate() - 1);
-  const boards = await Promise.all(leagues.map(async l => {
-    if (sportOf(l) === 'soccer') return safe(loadScoreboard(l, dayKey(date)));
-    const [a, b] = await Promise.all([safe(loadScoreboard(l, dayKey(prev))), safe(loadScoreboard(l, dayKey(date)))]);
-    if (!a && !b) return null;
-    const byId = new Map();
-    [...(a || []), ...(b || [])].forEach(e => byId.set(e.id, e));
-    return [...byId.values()];
-  }));
+  const boards = await liveBoards(leagues, date);
   if (token !== renderToken) return;
   const favIds = new Set(favorites.map(f => favKey(f.league, f.id)));
   const blocks = leagues.map((l, i) => {
@@ -762,11 +784,70 @@ async function viewLive(_, { silent } = {}) {
   const anyLive = blocks.some(b => b.live);
   if (liveState.offset === 0) setLiveDot(anyLive);
   currentView.refresh = anyLive ? 30000 : 120000;
-  app.innerHTML = head + (blocks.length ? blocks.map(b => b.html).join('')
-    : `<div class="card empty"><div class="emoji">📅</div><h2>Keine Spiele</h2><p>An diesem Tag finden in den gewählten Ligen keine Spiele statt.</p></div>`);
+  const dpScroll = $('.daypicker')?.scrollLeft;
+  app.innerHTML = head + `<div class="live-body${slide ? (slide > 0 ? ' from-r' : ' from-l') : ''}">` + (blocks.length ? blocks.map(b => b.html).join('')
+    : `<div class="card empty"><div class="emoji">📅</div><h2>Keine Spiele</h2><p>An diesem Tag finden in den gewählten Ligen keine Spiele statt.</p></div>`) + '</div>';
+  if (silent && dpScroll != null) { const dp = $('.daypicker'); if (dp) dp.scrollLeft = dpScroll; } else centerDay();
   const u = $('#liveUpdated');
   if (u) u.textContent = `Aktualisiert ${timeOf(new Date())}${anyLive ? ' · alle 30 s' : ''}`;
+  // Nachbartage schon vorladen, damit das Wischen sofort Ergebnisse zeigt
+  if (!silent) setTimeout(() => {
+    if (token !== renderToken) return;
+    for (const step of [1, -1]) {
+      const o = liveState.offset + step;
+      if (Math.abs(o) > LIVE_RANGE) continue;
+      const d = new Date(); d.setDate(d.getDate() + o);
+      liveBoards(leagues, d);
+    }
+  }, 400);
 }
+// Gewählten Tag in der (auf dem Handy seitlich scrollbaren) Tagesleiste mittig zeigen
+function centerDay() {
+  const dp = $('.daypicker'), on = dp?.querySelector('.day.on');
+  if (!dp || !on) return;
+  const a = dp.getBoundingClientRect(), b = on.getBoundingClientRect();
+  dp.scrollLeft += (b.left - a.left) - (a.width - b.width) / 2;
+}
+
+/* Wischen auf dem Spieltag: nach links = nächster Tag, nach rechts = Tag davor */
+let swipe = null;
+function resetSwipe(body) {
+  body.style.transition = 'transform .2s ease, opacity .2s ease';
+  body.style.transform = ''; body.style.opacity = '';
+}
+document.addEventListener('touchstart', e => {
+  swipe = null;
+  if (currentView?.name !== 'live' || e.touches.length !== 1 || !$('#searchModal').hidden) return;
+  const body = e.target.closest('.live-body');
+  if (!body) return;
+  const t = e.touches[0];
+  // Bildschirmränder frei lassen (dort liegt die Zurück-Geste von Safari)
+  if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;
+  swipe = { x: t.clientX, y: t.clientY, t: Date.now(), body, lock: null, dx: 0 };
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!swipe || e.touches.length !== 1) return;
+  const t = e.touches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  if (!swipe.lock) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    swipe.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+  }
+  if (swipe.lock !== 'x') return;
+  const atEnd = (dx < 0 && liveState.offset >= LIVE_RANGE) || (dx > 0 && liveState.offset <= -LIVE_RANGE);
+  swipe.dx = dx;
+  swipe.body.style.transition = 'none';
+  swipe.body.style.transform = `translateX(${Math.round(dx * (atEnd ? 0.15 : 0.5))}px)`;
+  swipe.body.style.opacity = String(1 - Math.min(Math.abs(dx) / 700, 0.35));
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  const s = swipe; swipe = null;
+  if (!s || s.lock !== 'x') return;
+  const fast = Math.abs(s.dx) > 40 && Date.now() - s.t < 300;
+  const dir = s.dx < 0 ? 1 : -1;
+  if ((Math.abs(s.dx) > 70 || fast) && setLiveDay(liveState.offset + dir, dir)) return;
+  resetSwipe(s.body);
+}, { passive: true });
+document.addEventListener('touchcancel', () => { if (swipe) resetSwipe(swipe.body); swipe = null; }, { passive: true });
 
 /* ---------- Team ---------- */
 const teamTabs = {};
@@ -1612,7 +1693,7 @@ document.addEventListener('click', ev => {
     return;
   }
   const day = ev.target.closest('[data-day]');
-  if (day) { liveState.offset = +day.dataset.day; renderToken++; viewLive(null, {}).then(scheduleRefresh); return; }
+  if (day) { const o = +day.dataset.day; setLiveDay(o, Math.sign(o - liveState.offset)); return; }
   const filter = ev.target.closest('[data-filter]');
   if (filter) { liveState.filter = filter.dataset.filter; store.set('fk.liveFilter', liveState.filter); renderToken++; viewLive(null, {}).then(scheduleRefresh); return; }
   const ss = ev.target.closest('[data-ssport]');
@@ -1647,6 +1728,12 @@ $('#searchInput').addEventListener('input', e => { searchState.q = e.target.valu
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#searchModal').hidden) closeSearch();
   if (e.key === '/' && $('#searchModal').hidden && !/input|textarea/i.test(document.activeElement?.tagName)) { e.preventDefault(); openSearch(); }
+  // Spieltag: Pfeiltasten blättern die Tage
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && currentView?.name === 'live' && $('#searchModal').hidden
+    && !e.altKey && !e.metaKey && !e.ctrlKey && !/input|textarea|select/i.test(document.activeElement?.tagName)) {
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    if (setLiveDay(liveState.offset + dir, dir)) e.preventDefault();
+  }
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && currentView?.refresh) route({ silent: true }); });
 window.addEventListener('hashchange', () => route());
