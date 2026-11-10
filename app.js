@@ -1381,13 +1381,16 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
     <div><span>Anstoß</span><b>${fullDate(e.date)}, ${timeOf(e.date)} Uhr</b></div>
   </div></div>`;
 
+  // Basketball: über 100 Körbe pro Spiel – dort ersetzt die Viertel-Tabelle oben den Verlauf
+  const timelineName = { soccer: 'Spielverlauf', hockey: 'Tore', baseball: 'Runs', football: 'Punkte' }[sport];
   const tabs = [
-    ['timeline', isSoccer ? 'Spielverlauf' : 'Punkte'],
+    ...(timelineName ? [['timeline', timelineName]] : []),
     ['stats', 'Statistik'],
     ['lineups', isSoccer ? 'Aufstellung' : 'Top-Spieler'],
     ['info', 'Infos'],
   ];
-  const tab = gameTabs[eventId] || (pre ? 'info' : 'timeline');
+  const saved = gameTabs[eventId];
+  const tab = tabs.some(([k]) => k === saved) ? saved : pre ? 'info' : tabs[0][0];
 
   const highlights = highlightsBlock(sum, e, homeTeam.displayName || H.name, awayTeam.displayName || A.name);
 
@@ -1482,15 +1485,30 @@ function soccerTimeline(sum, homeId, sport) {
   return `<div class="card timeline">${html}</div>`;
 }
 
+const STRENGTH_DE = { 'Power Play': 'Überzahl', 'Shorthanded': 'Unterzahl' };
 function scoringPlays(sum, sport, H, A) {
-  const plays = sum.scoringPlays || [];
+  let plays = sum.scoringPlays || [];
+  // NHL und MLB liefern keine eigene Liste der Treffer – dort stecken sie zwischen allen Spielzügen
+  if (!plays.length) plays = (sum.plays || []).filter(p => p.scoringPlay);
   if (!plays.length) return '';
   let html = '', lastP = 0;
   for (const p of plays) {
     const n = p.period?.number || 1;
     if (n !== lastP) { html += `<div class="tl-period">${periodName(sport, n)}</div>`; lastP = n; }
     const logo = p.team?.logo || (String(p.team?.id) === H.id ? H.logo : A.logo);
-    html += `<div class="play">${img(logo)}<div class="t">${esc(p.text)}<small>${esc(p.type?.text || '')}${p.clock?.displayValue ? ` · ${esc(p.clock.displayValue)}` : ''}</small></div>
+    let text = esc(p.text), sub = p.type?.text === 'Goal' ? 'Tor' : (p.type?.text || '');
+    if (sport === 'baseball' && p.scoreValue) sub = `${p.scoreValue} Run${p.scoreValue > 1 ? 's' : ''}`;
+    const pl = p.participants || [];
+    const scorer = pl.find(x => x.type === 'scorer');
+    if (sport === 'hockey' && scorer) {
+      // „Connor McDavid Goal (11) Wrist Shot, assists: none“ → Torschütze fett, Vorlagen auf Deutsch
+      const assists = pl.filter(x => x.type === 'assister').map(x => x.athlete?.displayName).filter(Boolean);
+      text = `<b>${esc(scorer.athlete?.displayName || '')}</b>${scorer.ytdGoals ? ` <span class="dim">(${esc(scorer.ytdGoals)}. Saisontor)</span>` : ''}
+        <br><span class="dim">${assists.length ? `Vorlage${assists.length > 1 ? 'n' : ''}: ${esc(assists.join(', '))}` : 'ohne Vorlage'}</span>`;
+      const str = STRENGTH_DE[p.strength?.text];
+      if (str) sub += ` · ${str}`;
+    }
+    html += `<div class="play">${img(logo)}<div class="t">${text}<small>${esc(sub)}${p.clock?.displayValue ? ` · ${esc(p.clock.displayValue)}` : ''}</small></div>
       <div class="s">${esc(p.awayScore ?? '')} : ${esc(p.homeScore ?? '')}</div></div>`;
   }
   return `<div class="card list-card"><div style="display:flex;justify-content:flex-end;gap:6px;padding:8px 12px;font-size:11px;color:var(--text-3);font-weight:700">${esc(A.abbr)} : ${esc(H.abbr)}</div>${html}</div>`;
