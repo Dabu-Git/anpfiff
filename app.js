@@ -25,6 +25,7 @@ const LEAGUES = [
   { key: 'soccer/ned.1', name: 'Eredivisie', flag: '🇳🇱' },
   { key: 'soccer/por.1', name: 'Primeira Liga', flag: '🇵🇹' },
   { key: 'soccer/aut.1', name: 'Österr. Bundesliga', flag: '🇦🇹' },
+  { key: 'soccer/tur.1', name: 'Süper Lig', flag: '🇹🇷' },
   { key: 'soccer/uefa.champions', name: 'Champions League', flag: '🇪🇺', noSearch: true },
   { key: 'soccer/uefa.europa', name: 'Europa League', flag: '🇪🇺', noSearch: true },
   { key: 'soccer/uefa.nations', name: 'Nations League', flag: '🇪🇺' },
@@ -73,7 +74,7 @@ function seasonStr(d = new Date()) {
 }
 // Vereinsname auf den Kern reduzieren, damit "FC Dornbirn 1913" und "FC Dornbirn" zusammenpassen
 function teamCore(name) {
-  return norm(name).replace(/\b(fc|sc|sv|vfb|scr|sk|svg|fk|usv|asv|tsv|bw|spg|sg|wsg|us|ac|cs|sk)\b/g, ' ')
+  return norm(name).replace(/\b(fc|sc|sv|vfb|scr|sk|svg|fk|usv|asv|tsv|bw|spg|sg|wsg|us|ac|cs)\b/g, ' ')
     .replace(/\b\d+\b/g, ' ').replace(/[^a-z]+/g, ' ').trim();
 }
 function sameTeam(a, b) {
@@ -227,6 +228,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let favorites = store.get('fk.favorites', []);
+// Zuletzt gezeigte Seiten (HTML + Scrollposition) für sofortiges Zurück-/Weiterblättern
+const snaps = new Map();
 const favKey = (league, id) => `${league}:${id}`;
 const isFav = (league, id) => favorites.some(f => favKey(f.league, f.id) === favKey(league, id));
 function toggleFav(team) {
@@ -240,6 +243,7 @@ function toggleFav(team) {
     toast(`⭐ ${team.name} hinzugefügt`);
   }
   store.set('fk.favorites', favorites);
+  snaps.clear();
 }
 
 // Favoriten übertragen (iPhone: die App auf dem Home-Bildschirm hat einen eigenen Speicher)
@@ -276,6 +280,7 @@ const cache = new Map();
 function get(url, ttl = 30000) {
   const c = cache.get(url);
   if (c && Date.now() - c.t < ttl) return c.p;
+  if (cache.size > 120) { const now = Date.now(); for (const [k, v] of cache) if (now - v.t > 600000) cache.delete(k); }
   const p = fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }).then(t => JSON.parse(germanize(t)));
   cache.set(url, { t: Date.now(), p });
   p.catch(() => cache.delete(url));
@@ -290,6 +295,9 @@ const DE_NAMES = [
   ['Hamburg SV', 'Hamburger SV'], ['Nurnberg', 'Nürnberg'], ['Dusseldorf', 'Düsseldorf'], ['Furth', 'Fürth'],
   ['Saarbrucken', 'Saarbrücken'], ['Osnabruck', 'Osnabrück'], ['Munster', 'Münster'], ['Preussen', 'Preußen'],
   ['Internazionale', 'Inter Mailand'], ['Inter Milan', 'Inter Mailand'], ['AC Milan', 'AC Mailand'], ['Rapid Vienna', 'Rapid Wien'], ['Austria Vienna', 'Austria Wien'],
+  ['Besiktas', 'Beşiktaş'], ['Fenerbahce', 'Fenerbahçe'], ['Kasimpasa', 'Kasımpaşa'], ['Goztepe', 'Göztepe'],
+  ['Caykur Rizespor', 'Çaykur Rizespor'], ['Genclerbirligi', 'Gençlerbirliği'], ['Genclerbirli', 'Gençlerbirliği'],
+  ['Eyupspor', 'Eyüpspor'], ['Basaksehir', 'Başakşehir'],
   ['Munich', 'München'],
 ];
 // Nationalteams: nur exakte JSON-Werte ersetzen ("Austria"), damit z. B. "Austria Lustenau" unverändert bleibt
@@ -305,6 +313,7 @@ const DE_COUNTRIES = {
   'Kazakhstan': 'Kasachstan', 'Cyprus': 'Zypern', 'Lithuania': 'Litauen', 'Latvia': 'Lettland', 'Estonia': 'Estland',
   'Moldova': 'Moldau', 'Luxembourg': 'Luxemburg', 'Faroe Islands': 'Färöer',
   'Rep Ireland': 'Irland', 'N Ireland': 'Nordirland', 'Bosnia-Herz': 'Bosnien-H.',
+  'Istanbul BB': 'Başakşehir',
 };
 const DE_COUNTRY_RE = new RegExp(`"(${Object.keys(DE_COUNTRIES).sort((a, b) => b.length - a.length).join('|')})"`, 'g');
 function germanize(text) {
@@ -461,7 +470,7 @@ function goalsFromSummary(sum) {
 
 async function loadAllTeams() {
   const cached = store.get('fk.teams', null);
-  if (cached && cached.v === 4 && Date.now() - cached.t < 864e5 * 3) return cached.teams;
+  if (cached && cached.v === 5 && Date.now() - cached.t < 864e5 * 3) return cached.teams;
   // Die /teams-Endpunkte erlauben kein CORS – die Tabellen enthalten aber alle Teams.
   const lists = await Promise.all(LEAGUES.filter(l => !l.noSearch).map(async l => {
     const d = await safe(get(`${API2}/${l.key}/standings`, 864e5));
@@ -472,7 +481,7 @@ async function loadAllTeams() {
     }));
   }));
   const teams = lists.flat();
-  if (teams.length) store.set('fk.teams', { v: 4, t: Date.now(), teams });
+  if (teams.length) store.set('fk.teams', { v: 5, t: Date.now(), teams });
   return teams;
 }
 
@@ -545,14 +554,14 @@ async function viewHome(_, { silent } = {}) {
   const espnFavs = favorites.filter(f => !isRegional(f.league));
   const regionalFavs = favorites.filter(f => isRegional(f.league));
   const leagues = [...new Set(espnFavs.map(f => f.league))];
-  const [schedules, boards, tables] = await Promise.all([
+  const rLeagues = [...new Set(regionalFavs.map(f => f.league))];
+  const [schedules, boards, tables, rTables] = await Promise.all([
     Promise.all(espnFavs.map(f => safe(loadTeamSchedule(f.league, f.id)))),
     Promise.all(leagues.map(l => safe(loadScoreboard(l)))),
     Promise.all(leagues.map(l => safe(get(`${API2}/${l}/standings`, 300000)))),
+    Promise.all(rLeagues.map(l => safe(loadRegionalTable(regionalByKey[l])))),
   ]);
   const tableByLeague = Object.fromEntries(leagues.map((l, i) => [l, tables[i]]));
-  const rLeagues = [...new Set(regionalFavs.map(f => f.league))];
-  const rTables = await Promise.all(rLeagues.map(l => loadRegionalTable(regionalByKey[l])));
   const rTableByLeague = Object.fromEntries(rLeagues.map((l, i) => [l, rTables[i]]));
   if (token !== renderToken) return;
 
@@ -717,13 +726,23 @@ async function viewLive(_, { silent } = {}) {
     <div class="toolbar"><div class="daypicker">${days.join('')}</div><div class="chips">${chips}</div></div>`;
   if (!silent) app.innerHTML = head + '<div class="spinner"></div>';
 
-  const boards = await Promise.all(leagues.map(l => safe(loadScoreboard(l, dayKey(date)))));
+  // ESPN ordnet Spiele dem US-Datum zu: NBA/NHL/MLB-Abendspiele laufen bei uns erst nach Mitternacht
+  // und stehen deshalb im Board des Vortags. Für US-Ligen beide Tage laden und nach Ortszeit filtern.
+  const prev = new Date(date); prev.setDate(prev.getDate() - 1);
+  const boards = await Promise.all(leagues.map(async l => {
+    if (sportOf(l) === 'soccer') return safe(loadScoreboard(l, dayKey(date)));
+    const [a, b] = await Promise.all([safe(loadScoreboard(l, dayKey(prev))), safe(loadScoreboard(l, dayKey(date)))]);
+    if (!a && !b) return null;
+    const byId = new Map();
+    [...(a || []), ...(b || [])].forEach(e => byId.set(e.id, e));
+    return [...byId.values()];
+  }));
   if (token !== renderToken) return;
   const favIds = new Set(favorites.map(f => favKey(f.league, f.id)));
   const blocks = leagues.map((l, i) => {
     let evs = (boards[i] || []).filter(e => {
       // nur Spiele, die tatsächlich an diesem Tag stattfinden
-      return dayKey(new Date(e.date)) === dayKey(date) || e.state === 'in';
+      return dayKey(new Date(e.date)) === dayKey(date) || (e.state === 'in' && liveState.offset === 0);
     });
     if (!evs.length) return '';
     const order = { in: 0, pre: 1, post: 2 };
@@ -758,9 +777,10 @@ async function viewTeam([sport, lg, id], { silent } = {}) {
   if (!silent) app.innerHTML = skeleton();
   const token = renderToken;
 
-  const [sched, standings] = await Promise.all([
+  const [sched, standings, board] = await Promise.all([
     safe(loadTeamSchedule(league, id)),
     safe(get(`${API2}/${league}/standings`, 300000)),
+    safe(loadScoreboard(league)),
   ]);
   if (token !== renderToken) return;
   if (!sched) {
@@ -770,7 +790,6 @@ async function viewTeam([sport, lg, id], { silent } = {}) {
   const t = sched.team || {};
   const team = { league, id: String(id), name: t.displayName || t.name, abbr: t.abbreviation, logo: logoOf(t), color: t.color };
   // Board-Merge für Live-Spiele
-  const board = await safe(loadScoreboard(league));
   const boardById = new Map((board || []).map(e => [e.id, e]));
   const events = (sched?.events || []).map(e => boardById.get(e.id) || e);
   const done = events.filter(e => e.completed);
@@ -970,7 +989,9 @@ const NOTE_DE = {
   'A, B: Relegation; C: Relegation or playoffs': 'A, B: Abstieg · C: Abstieg oder Playoffs',
   'Champions League qualifying': 'Champions-League-Quali', 'Europa League qualifying': 'Europa-League-Quali',
   'Conference League qualifying': 'Conference-League-Quali', 'Relegation playoff': 'Relegation', 'Relegation playoffs': 'Relegation',
-  'Relegation': 'Abstieg', 'Promotion': 'Aufstieg', 'Promotion playoff': 'Aufstiegs-Relegation', 'Promotion playoffs': 'Aufstiegs-Relegation',
+  'Relegation': 'Abstieg', 'Relegated': 'Abstieg', 'Promotion': 'Aufstieg', 'Championship playoffs': 'Meistergruppe',
+  'Eliminated': 'Ausgeschieden', 'Qualifies for round of 16': 'Achtelfinale',
+  'Knockout phase playoffs - seeded': 'Playoffs (gesetzt)', 'Knockout phase playoffs - unseeded': 'Playoffs (ungesetzt)', 'Promotion playoff': 'Aufstiegs-Relegation', 'Promotion playoffs': 'Aufstiegs-Relegation',
 };
 const legendHtml = items => items.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${items.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(NOTE_DE[d] || d)}</span>`).join('')}</div>` : '';
 function standingsTable(data, league, id) {
@@ -1039,6 +1060,8 @@ async function viewLeague([sport, lg, teamId], { silent } = {}) {
   const app = $('#app');
   if (!silent) app.innerHTML = skeleton();
   const token = renderToken;
+  const tabKey = `L${league}`;
+  if (teamId && !silent) delete teamTabs[tabKey];
   const [standings, board] = await Promise.all([
     safe(get(`${API2}/${league}/standings`, 300000)),
     safe(loadScoreboard(league)),
@@ -1052,14 +1075,15 @@ async function viewLeague([sport, lg, teamId], { silent } = {}) {
   const rawSeason = standings?.seasons?.[0]?.displayName || standings?.children?.[0]?.standings?.seasonDisplayName || '';
   const sm = String(rawSeason).match(/(\d{4})(?:-(\d{2,4}))?/);
   const season = sm ? `Saison ${sm[1]}${sm[2] ? '/' + sm[2].slice(-2) : ''}` : '';
+  const onGames = teamTabs[tabKey] === 'lgames';
   app.innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button>
     <div class="page-head"><div><h1>${info?.flag || ''} ${esc(info?.name || standings?.name || league)}</h1>
       <p>${SPORTS[sport]?.icon || ''} ${SPORTS[sport]?.name || ''}${season ? ` · ${esc(season)}` : ''}</p></div>
       ${live.length ? `<span class="live-pill">${live.length} live</span>` : ''}</div>
     <div class="tabs" data-tabgroup="L${esc(league)}">
-      <button class="tab on" data-tab="ltable">Tabelle</button><button class="tab" data-tab="lgames">Spiele</button></div>
-    <div class="tab-panel on" data-panel="ltable">${standingsTable(standings, league, teamId)}</div>
-    <div class="tab-panel" data-panel="lgames">${games.length
+      <button class="tab ${onGames ? '' : 'on'}" data-tab="ltable">Tabelle</button><button class="tab ${onGames ? 'on' : ''}" data-tab="lgames">Spiele</button></div>
+    <div class="tab-panel ${onGames ? '' : 'on'}" data-panel="ltable">${standingsTable(standings, league, teamId)}</div>
+    <div class="tab-panel ${onGames ? 'on' : ''}" data-panel="lgames">${games.length
       ? `<div class="card list-card">${games.map(e => matchRow(e, { favIds })).join('')}</div>`
       : '<div class="card empty-inline">Aktuell keine Spiele in dieser Liga.</div>'}</div>`;
   if (teamId && !silent) $('tr.me')?.scrollIntoView({ block: 'center' });
@@ -1406,7 +1430,7 @@ function renderSearchChips() {
     ? [`<button class="chip ${searchState.league === 'all' ? 'on' : ''}" data-sleague="all">Alle Ligen</button>`, ...lgs.map(l => `<button class="chip ${searchState.league === l.key ? 'on' : ''}" data-sleague="${l.key}">${l.flag} ${esc(l.name)}</button>`)].join('')
     : '';
 }
-function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss'); }
+function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/ı/g, 'i'); }
 function renderSearchResults() {
   if (!allTeams) return;
   const q = norm(searchState.q.trim());
@@ -1444,6 +1468,7 @@ document.addEventListener('submit', ev => {
     const msg = $('#favMsg');
     if (n < 0) { msg.textContent = 'Kein gültiger Code. Er beginnt mit ANPFIFF1:'; return; }
     toast(n ? `${n} Favorit${n === 1 ? '' : 'en'} übernommen` : 'Alle Favoriten waren schon vorhanden');
+    snaps.clear();
     renderToken++; route();
     return;
   }
@@ -1460,6 +1485,7 @@ document.addEventListener('submit', ev => {
     }
     store.set(manualKey(key), { rows, season: seasonStr(), savedAt: new Date().toISOString() });
     toast(`Tabelle ${l?.name || ''} gespeichert (${rows.length} Teams)`);
+    snaps.clear();
     renderToken++; route();
     return;
   }
@@ -1487,6 +1513,19 @@ const routes = [
   [/^#\/game\/([^/]+)\/([^/]+)\/([^/]+)$/, viewGame, 'game'],
 ];
 let refreshTimer = null;
+let shownHash = null;   // Seite, die gerade in #app steht
+let linkNavAt = 0;      // Zeitpunkt des letzten Klicks auf einen App-Link (sonst: Zurück/Vor im Verlauf)
+const SNAP_MAX = 12, SNAP_AGE = 600000;
+try { history.scrollRestoration = 'manual'; } catch {}
+
+// Fertig gerenderte Seite beim Verlassen merken
+function keepSnapshot() {
+  const app = $('#app');
+  if (!shownHash || !currentView?.done || app.querySelector('.err, .spinner, .skel')) return;
+  snaps.delete(shownHash);
+  snaps.set(shownHash, { html: app.innerHTML, y: window.scrollY, t: Date.now() });
+  while (snaps.size > SNAP_MAX) snaps.delete(snaps.keys().next().value);
+}
 
 async function route({ silent = false } = {}) {
   const hash = location.hash || '#/';
@@ -1496,18 +1535,38 @@ async function route({ silent = false } = {}) {
     if (m) { match = { fn, name, params: m.slice(1) }; break; }
   }
   if (!match) { location.hash = '#/'; return; }
-  if (!silent) renderToken++;
-  $('#app').classList.toggle('silent', silent);
-  currentView = { name: match.name, refresh: 0 };
+  const app = $('#app');
+  const viaLink = Date.now() - linkNavAt < 1000;
+  let snap = null;
+  if (!silent) {
+    renderToken++;
+    if (hash !== shownHash) {
+      keepSnapshot();
+      snap = snaps.get(hash);
+      if (snap && Date.now() - snap.t > SNAP_AGE) { snaps.delete(hash); snap = null; }
+    }
+    linkNavAt = 0;
+  }
+  // Bekannte Seite sofort zeigen und im Hintergrund auffrischen – ohne Lade-Skelett
+  const quiet = silent || !!snap;
+  app.classList.toggle('silent', quiet);
+  const view = currentView = { name: match.name, refresh: 0, done: false };
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === match.name));
-  if (!silent) window.scrollTo({ top: 0 });
+  if (snap) {
+    app.innerHTML = snap.html;
+    window.scrollTo({ top: viaLink ? 0 : snap.y });
+    if (viaLink && match.fn === viewLeague && match.params[2]) $('tr.me')?.scrollIntoView({ block: 'center' });
+  } else if (!silent) window.scrollTo({ top: 0 });
+  if (!silent) shownHash = hash;
   try {
-    await match.fn(match.params, { silent });
+    await match.fn(match.params, { silent: quiet });
+    // nicht als fertig werten, wenn die Ansicht selbst weitergeleitet hat
+    if (currentView === view && (location.hash || '#/') === hash) view.done = true;
   } catch (err) {
     console.error(err);
-    if (!silent) $('#app').innerHTML = `<div class="err">Etwas ist schiefgelaufen: ${esc(err.message)}. <button class="link-btn" data-action="reload">Erneut versuchen</button></div>`;
+    if (!quiet) app.innerHTML = `<div class="err">Etwas ist schiefgelaufen: ${esc(err.message)}. <button class="link-btn" data-action="reload">Erneut versuchen</button></div>`;
   }
-  scheduleRefresh();
+  if (currentView === view) scheduleRefresh();
 }
 
 function scheduleRefresh() {
@@ -1524,7 +1583,10 @@ function setLiveDot(on) { document.querySelectorAll('.nav-live-dot').forEach(d =
 
 /* ---------- Events ---------- */
 document.addEventListener('click', ev => {
-  if (ev.target.closest('a[href]') && !ev.target.closest('[data-fav]')) return;
+  if (ev.target.closest('a[href]') && !ev.target.closest('[data-fav]')) {
+    if (ev.target.closest('a[href^="#"]')) linkNavAt = Date.now();
+    return;
+  }
   const fav = ev.target.closest('[data-fav]');
   if (fav) {
     ev.preventDefault(); ev.stopPropagation();
@@ -1536,7 +1598,7 @@ document.addEventListener('click', ev => {
     const go = $('#goHome');
     if (go) { go.hidden = !favorites.length; go.textContent = `Los geht's mit ${favorites.length} Team${favorites.length === 1 ? '' : 's'} →`; }
     if (!$('#searchModal').hidden || go) return;
-    if (currentView?.name === 'home') { renderToken++; route(); }
+    if (currentView?.name === 'home') route({ silent: true });
     return;
   }
   const tab = ev.target.closest('[data-tab]');
@@ -1562,7 +1624,7 @@ document.addEventListener('click', ev => {
     const a = act.dataset.action;
     if (a === 'open-search') openSearch();
     else if (a === 'close-search') closeSearch();
-    else if (a === 'back') { if (history.length > 1) history.back(); else location.hash = '#/'; }
+    else if (a === 'back') { if (history.length > 1) history.back(); else { linkNavAt = Date.now(); location.hash = '#/'; } }
     else if (a === 'reload' || a === 'go-home') route();
     else if (a === 'copy-favs') {
       const code = favCode();
@@ -1570,7 +1632,7 @@ document.addEventListener('click', ev => {
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(() => toast('Code kopiert – in der anderen App einfügen'), fallback);
       else fallback();
     }
-    else if (a === 'clear-table') { try { localStorage.removeItem(manualKey(act.dataset.league)); } catch {} toast('Eingefügte Tabelle entfernt'); renderToken++; route(); }
+    else if (a === 'clear-table') { try { localStorage.removeItem(manualKey(act.dataset.league)); } catch {} toast('Eingefügte Tabelle entfernt'); snaps.clear(); renderToken++; route(); }
     else if (a === 'toggle-theme') {
       const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = next; store.set('fk.theme', next);
@@ -1578,7 +1640,7 @@ document.addEventListener('click', ev => {
     return;
   }
   const href = ev.target.closest('[data-href]');
-  if (href) { location.hash = href.dataset.href; }
+  if (href) { linkNavAt = Date.now(); location.hash = href.dataset.href; }
 });
 
 $('#searchInput').addEventListener('input', e => { searchState.q = e.target.value; renderSearchResults(); });

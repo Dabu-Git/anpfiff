@@ -23,7 +23,7 @@ Alternativ im Terminal: `python3 -m http.server 5173` in diesem Ordner.
 - **Tabellen**: alle Ligen auf einen Blick, jede Tabelle mit einem Tipp – auch direkt aus jeder Teamkarte
 - **Teamseite**: Ergebnisse mit Torschützen, Spielplan, Saisonstatistik (Bilanz, Tore/Punkte pro Spiel, Heim/Auswärts, Serien, Torjäger) und Tabelle
 - **Spielseite**: Spielverlauf (Tore, Vorlagen, Karten, Wechsel), Teamstatistik, Aufstellungen bzw. Top-Spieler, Viertel-/Drittelergebnisse
-- **Team hinzufügen**: Suche über Bundesliga, 2. Bundesliga, Premier League, LaLiga, Serie A, Ligue 1, Eredivisie, Primeira Liga, Österr. Bundesliga, NBA, NFL, NHL und MLB
+- **Team hinzufügen**: Suche über Bundesliga, 2. Bundesliga, Premier League, LaLiga, Serie A, Ligue 1, Eredivisie, Primeira Liga, Österr. Bundesliga, Süper Lig, Nations League, NBA, NFL, NHL und MLB
 - Live-Spiele aktualisieren sich automatisch, heller und dunkler Modus, für Handy optimiert
 
 - **Vorarlberg & Ostschweiz**: Regionalliga West, Eliteliga, Vorarlbergliga, Landesliga, 1.–5. Landesklasse und die Schweizer 2. Liga regional (OFV, Gruppe 1 mit dem FC Au-Berneck 05). Eigene Vereine lassen sich hinzufügen.
