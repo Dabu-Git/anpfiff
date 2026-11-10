@@ -809,21 +809,45 @@ function centerDay() {
   dp.scrollLeft += (b.left - a.left) - (a.width - b.width) / 2;
 }
 
-/* Wischen auf dem Spieltag: nach links = nächster Tag, nach rechts = Tag davor */
+/* Wischen: auf dem Spieltag wechselt es den Tag, auf Seiten mit Reitern (Tabelle/Spiele/Statistik …) den Reiter.
+ * Nach links = weiter (nächster Tag / Reiter rechts), nach rechts = zurück. */
 let swipe = null;
-function resetSwipe(body) {
-  body.style.transition = 'transform .2s ease, opacity .2s ease';
-  body.style.transform = ''; body.style.opacity = '';
+function resetSwipe(el, animate = true) {
+  el.style.transition = animate ? 'transform .2s ease, opacity .2s ease' : '';
+  el.style.transform = ''; el.style.opacity = '';
+}
+// Liegt der Finger in einem Bereich, der selbst seitlich scrollt (breite Tabelle, Chips)? Dann nicht wischen.
+function inSideScroller(node, stop) {
+  for (let el = node; el && el !== stop; el = el.parentElement) {
+    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true;
+  }
+  return false;
+}
+function swipeTarget(target) {
+  if (currentView?.name === 'live') {
+    const body = target.closest('.live-body');
+    return body && { kind: 'day', el: body };
+  }
+  const panel = target.closest('.tab-panel.on');
+  const group = panel && $('#app [data-tabgroup]');
+  if (!group) return null;
+  const tabs = [...group.querySelectorAll('.tab')];
+  const idx = tabs.findIndex(t => t.classList.contains('on'));
+  return tabs.length > 1 && idx >= 0 ? { kind: 'tab', el: panel, tabs, idx } : null;
+}
+function canSwipe(s, dir) {
+  if (s.kind === 'day') return Math.abs(liveState.offset + dir) <= LIVE_RANGE;
+  return s.idx + dir >= 0 && s.idx + dir < s.tabs.length;
 }
 document.addEventListener('touchstart', e => {
   swipe = null;
-  if (currentView?.name !== 'live' || e.touches.length !== 1 || !$('#searchModal').hidden) return;
-  const body = e.target.closest('.live-body');
-  if (!body) return;
+  if (e.touches.length !== 1 || !$('#searchModal').hidden) return;
   const t = e.touches[0];
   // Bildschirmränder frei lassen (dort liegt die Zurück-Geste von Safari)
   if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;
-  swipe = { x: t.clientX, y: t.clientY, t: Date.now(), body, lock: null, dx: 0 };
+  const target = swipeTarget(e.target);
+  if (!target || inSideScroller(e.target, target.el)) return;
+  swipe = { ...target, x: t.clientX, y: t.clientY, t: Date.now(), lock: null, dx: 0 };
 }, { passive: true });
 document.addEventListener('touchmove', e => {
   if (!swipe || e.touches.length !== 1) return;
@@ -833,24 +857,51 @@ document.addEventListener('touchmove', e => {
     swipe.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
   }
   if (swipe.lock !== 'x') return;
-  const atEnd = (dx < 0 && liveState.offset >= LIVE_RANGE) || (dx > 0 && liveState.offset <= -LIVE_RANGE);
+  const atEnd = !canSwipe(swipe, dx < 0 ? 1 : -1);
   swipe.dx = dx;
-  swipe.body.style.transition = 'none';
-  swipe.body.style.transform = `translateX(${Math.round(dx * (atEnd ? 0.15 : 0.5))}px)`;
-  swipe.body.style.opacity = String(1 - Math.min(Math.abs(dx) / 700, 0.35));
+  swipe.el.style.transition = 'none';
+  swipe.el.style.transform = `translateX(${Math.round(dx * (atEnd ? 0.15 : 0.5))}px)`;
+  swipe.el.style.opacity = String(1 - Math.min(Math.abs(dx) / 700, 0.35));
 }, { passive: true });
 document.addEventListener('touchend', () => {
   const s = swipe; swipe = null;
   if (!s || s.lock !== 'x') return;
   const fast = Math.abs(s.dx) > 40 && Date.now() - s.t < 300;
   const dir = s.dx < 0 ? 1 : -1;
-  if ((Math.abs(s.dx) > 70 || fast) && setLiveDay(liveState.offset + dir, dir)) return;
-  resetSwipe(s.body);
+  if ((Math.abs(s.dx) > 70 || fast) && canSwipe(s, dir)) {
+    if (s.kind === 'day') { setLiveDay(liveState.offset + dir, dir); return; }
+    resetSwipe(s.el, false);
+    selectTab(s.tabs[s.idx + dir], dir);
+    return;
+  }
+  resetSwipe(s.el);
 }, { passive: true });
-document.addEventListener('touchcancel', () => { if (swipe) resetSwipe(swipe.body); swipe = null; }, { passive: true });
+document.addEventListener('touchcancel', () => { if (swipe) resetSwipe(swipe.el); swipe = null; }, { passive: true });
 
 /* ---------- Team ---------- */
 const teamTabs = {};
+
+// Reiter umschalten (Tipp oder Wischen); dir > 0 lässt den neuen Inhalt von rechts hereingleiten
+function selectTab(tab, dir = 0) {
+  const group = tab.closest('[data-tabgroup]');
+  const key = group.dataset.tabgroup;
+  if (currentView?.name === 'game') gameTabs[key.slice(1)] = tab.dataset.tab;
+  else teamTabs[key] = tab.dataset.tab;
+  group.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t === tab));
+  tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  document.querySelectorAll('#app [data-panel]').forEach(p => {
+    const on = p.dataset.panel === tab.dataset.tab;
+    p.classList.remove('from-r', 'from-l');
+    p.classList.toggle('on', on);
+    if (on && dir) { void p.offsetWidth; p.classList.add(dir > 0 ? 'from-r' : 'from-l'); }
+  });
+  // Weit unten gewischt? Dann zum Anfang des neuen Reiters springen, damit man nicht im Leeren steht
+  if (dir) {
+    const head = $('.topbar')?.offsetHeight || 0;
+    const top = group.getBoundingClientRect().top;
+    if (top < head) window.scrollTo({ top: window.scrollY + top - head - 8 });
+  }
+}
 
 async function viewTeam([sport, lg, id], { silent } = {}) {
   const league = `${sport}/${lg}`;
@@ -1683,15 +1734,7 @@ document.addEventListener('click', ev => {
     return;
   }
   const tab = ev.target.closest('[data-tab]');
-  if (tab) {
-    const group = tab.closest('[data-tabgroup]');
-    const key = group.dataset.tabgroup;
-    if (currentView?.name === 'game') gameTabs[key.slice(1)] = tab.dataset.tab;
-    else teamTabs[key] = tab.dataset.tab;
-    group.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t === tab));
-    document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('on', p.dataset.panel === tab.dataset.tab));
-    return;
-  }
+  if (tab) { selectTab(tab); return; }
   const day = ev.target.closest('[data-day]');
   if (day) { const o = +day.dataset.day; setLiveDay(o, Math.sign(o - liveState.offset)); return; }
   const filter = ev.target.closest('[data-filter]');
