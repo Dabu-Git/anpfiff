@@ -591,8 +591,10 @@ async function viewHome(_, { silent } = {}) {
     if (favIds.has(favKey(e.league, e.home.id)) || favIds.has(favKey(e.league, e.away.id))) allEvents.set(e.id, e);
   });
 
-  const all = [...allEvents.values()];
+  const all = [...allEvents.values(), ...await demoEvents()];
   const liveGames = all.filter(e => e.state === 'in');
+  // Liveticker: Ereignisse aller laufenden Favoriten-Spiele, neueste zuerst
+  const tickerLoad = Promise.all(liveGames.slice(0, 5).map(async e => tickerItems(await safe(loadSummary(e.league, e.id, 20000)), e)));
   const results = all.filter(e => e.completed).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
   const upcoming = all.filter(e => e.state === 'pre').sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 8);
 
@@ -601,6 +603,7 @@ async function viewHome(_, { silent } = {}) {
     const s = await safe(loadSummary(e.league, e.id, 300000));
     if (s) e.goals = goalsFromSummary(s).map(g => ({ ...g, player: shortName(g.player) }));
   }));
+  const ticker = (await tickerLoad).flat().sort((a, b) => b.ts - a.ts).slice(0, 14);
   if (token !== renderToken) return;
 
   setLiveDot(liveGames.length > 0);
@@ -664,7 +667,10 @@ async function viewHome(_, { silent } = {}) {
       <span class="updated">Aktualisiert ${timeOf(new Date())}${liveGames.length ? ' · alle 30 s' : ''}</span>
     </div>
     ${liveGames.length ? `<section class="section"><div class="section-head"><h2>🔴 Jetzt live</h2></div>
-      <div class="live-strip">${liveGames.map(liveCard).join('')}</div></section>` : ''}
+      <div class="live-strip">${liveGames.map(liveCard).join('')}</div></section>
+    <section class="section"><div class="section-head"><h2>Liveticker</h2><span class="dim" style="font-size:12px">aktualisiert alle 30 s</span></div>
+      <div class="card ticker">${ticker.length ? ticker.map(tickerRow).join('')
+        : '<div class="empty-inline">Noch keine Ereignisse – der Ticker füllt sich nach dem Anpfiff.</div>'}</div></section>` : ''}
     <section class="section">
       <div class="section-head"><h2>Meine Teams <span class="count">${favorites.length}</span></h2>
         <span class="head-actions">${favorites.length > 1 ? `<button class="link-btn" data-action="sort-teams">${SORT_ICON}Sortieren</button>` : ''}
@@ -781,6 +787,136 @@ document.addEventListener('pointermove', e => {
 });
 document.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) dragEnd(); });
 document.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.id) dragEnd(); });
+
+/* ---------- Liveticker ----------
+ * Macht aus den ESPN-Ereignissen eines laufenden Spiels kurze deutsche Ticker-Zeilen. */
+function tickerItems(sum, e) {
+  if (!sum) return [];
+  const sport = sportOf(e.league);
+  const teamOf = id => (String(id) === e.home.id ? e.home : String(id) === e.away.id ? e.away : null);
+  const items = [];
+  const add = (src, x) => items.push({ ts: Date.parse(src.wallclock) || 0, e, ...x });
+  if (sport === 'soccer') {
+    // Tore, Karten und Halbzeiten – Wechsel stehen im Spielverlauf auf der Spielseite
+    let h = 0, a = 0;
+    for (const k of sum.keyEvents || []) {
+      const t = k.type?.type || '';
+      const pl = k.participants || [];
+      const who = pl[0]?.athlete?.displayName || '';
+      const tm = teamOf(k.team?.id);
+      const min = k.clock?.displayValue || '';
+      if (k.scoringPlay) {
+        if (tm === e.home) h++; else if (tm === e.away) a++;
+        const how = t.includes('own-goal') ? ' (Eigentor)' : t.includes('penalty') ? ' (Elfmeter)' : '';
+        add(k, { min, ico: '⚽', cls: 'goal', title: `Tor für ${tm?.short || ''}`, score: `${h}:${a}`,
+          sub: `${who}${how}${pl[1]?.athlete?.displayName && !how ? ` · Vorlage: ${pl[1].athlete.displayName}` : ''}` });
+      } else if (t.includes('red') || t.includes('second-yellow')) {
+        add(k, { min, ico: '🟥', cls: 'red', title: t.includes('yellow') ? 'Gelb-Rot' : 'Rote Karte', sub: `${who}${tm ? ` (${tm.short})` : ''}` });
+      } else if (t.includes('yellow')) {
+        add(k, { min, ico: '🟨', title: 'Gelbe Karte', sub: `${who}${tm ? ` (${tm.short})` : ''}` });
+      } else if (t === 'kickoff') add(k, { min, ico: '▶️', title: 'Anpfiff', sub: '' });
+      else if (t === 'halftime') add(k, { min, ico: '⏸️', title: 'Halbzeit', sub: `${h}:${a}` });
+      else if (t === 'start-2nd-half') add(k, { min, ico: '▶️', title: 'Anpfiff 2. Halbzeit', sub: '' });
+    }
+  } else if (sport !== 'basketball') {
+    // Eishockey, Football, Baseball: jede Punkte-Aktion (Basketball hätte über 100 davon)
+    const plays = sum.scoringPlays?.length ? sum.scoringPlays : (sum.plays || []).filter(p => p.scoringPlay);
+    for (const p of plays) {
+      const tm = teamOf(p.team?.id);
+      const scorer = (p.participants || []).find(x => x.type === 'scorer')?.athlete?.displayName;
+      add(p, { min: `${p.period?.number || ''}.${p.clock?.displayValue ? ` ${p.clock.displayValue}` : ''}`, ico: SPORTS[sport].icon, cls: 'goal',
+        title: sport === 'hockey' ? `Tor für ${tm?.short || ''}` : `Punkte für ${tm?.short || ''}`,
+        score: p.homeScore != null ? `${p.homeScore}:${p.awayScore}` : '', sub: scorer || p.text || '' });
+    }
+  }
+  return items;
+}
+function tickerRow(it) {
+  const [s, lg] = it.e.league.split('/');
+  return `<a class="tk-row ${it.cls || ''}" href="#/game/${s}/${lg}/${it.e.id}">
+    <span class="tk-min">${esc(it.min)}</span><span class="tk-ico">${it.ico}</span>
+    <div class="tk-txt"><b>${esc(it.title)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</div>
+    <span class="tk-side">${it.score ? `<span class="tk-score">${esc(it.score)}</span>` : ''}
+      <span class="tk-game">${esc(it.e.home.abbr || it.e.home.short)} – ${esc(it.e.away.abbr || it.e.away.short)}</span></span></a>`;
+}
+
+// Testmodus (nur lokal): ?demo=soccer/tur.1:401888253 behandelt beendete Spiele wie laufende
+const DEMO = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? new URLSearchParams(location.search).get('demo') : null;
+async function demoEvents() {
+  if (!DEMO) return [];
+  const evs = await Promise.all(DEMO.split(',').map(async x => {
+    const [league, id] = x.split(':');
+    const comp = (await safe(loadSummary(league, id, 300000)))?.header?.competitions?.[0];
+    if (!comp) return null;
+    const e = normEvent({ id, date: comp.date, competitions: [comp] }, league);
+    return { ...e, state: 'in', completed: false };
+  }));
+  return evs.filter(Boolean);
+}
+
+/* ---------- Tor-Alarm ----------
+ * Beobachtet im Hintergrund der App die Spiele der Favoriten – egal, welche Seite gerade offen ist –
+ * und meldet jedes Tor (Fußball, Eishockey) als Banner. Funktioniert, solange die App geöffnet ist. */
+const lastScores = new Map();   // Spiel-ID → "Heim:Gast" beim letzten Blick
+let watchTimer = null;
+async function watchFavorites() {
+  clearTimeout(watchTimer);
+  let live = 0;
+  const favs = favorites.filter(f => leagueByKey[f.league]);
+  if (favs.length && !document.hidden) {
+    const favIds = new Set(favs.map(f => favKey(f.league, f.id)));
+    const leagues = [...new Set(favs.map(f => f.league))].filter(l => ['soccer', 'hockey'].includes(sportOf(l)));
+    const boards = await Promise.all(leagues.map(l => safe(loadScoreboard(l))));
+    const events = [...boards.flat().filter(Boolean), ...await demoEvents()];
+    for (const e of events) {
+      const mine = DEMO || favIds.has(favKey(e.league, e.home.id)) || favIds.has(favKey(e.league, e.away.id));
+      if (!mine || e.state === 'pre') continue;
+      if (e.state === 'in') live++;
+      const now = `${+e.home.score || 0}:${+e.away.score || 0}`;
+      const before = lastScores.get(e.id);
+      lastScores.set(e.id, now);
+      if (before != null && before !== now) goalAlert(e, before);
+    }
+  }
+  watchTimer = setTimeout(watchFavorites, live ? 25000 : 120000);
+}
+async function goalAlert(e, before) {
+  const [bh, ba] = before.split(':').map(Number);
+  const h = +e.home.score || 0, a = +e.away.score || 0;
+  const scorer = h > bh && a === ba ? e.home : a > ba && h === bh ? e.away : null;
+  const cancelled = h + a < bh + ba;
+  let detail = '';
+  if (scorer && sportOf(e.league) === 'soccer') {
+    // Torschütze nachschlagen – ESPN trägt ihn meist ein paar Sekunden nach dem Tor ein
+    const goals = goalsFromSummary(await safe(loadSummary(e.league, e.id, 3000))).filter(g => g.teamId === scorer.id);
+    const g = goals.length === (scorer === e.home ? h : a) ? goals[goals.length - 1] : null;
+    if (g) detail = ` · ${shortName(g.player)} ${g.min}`;
+  }
+  showGoalBanner({
+    title: cancelled ? 'Tor aberkannt' : scorer ? `TOR für ${scorer.short}!` : 'Tor!',
+    text: `${e.home.short} ${h} : ${a} ${e.away.short}${detail}`,
+    logo: (scorer || e.home).logo, href: `#/game/${e.league}/${e.id}`, cancelled,
+  });
+  // Seite mit Live-Daten gleich auffrischen, damit Ergebnis und Ticker zum Banner passen
+  if (currentView?.refresh) route({ silent: true });
+}
+function showGoalBanner({ title, text, logo, href, cancelled }) {
+  let b = $('#goalBanner');
+  if (!b) {
+    b = document.createElement('a');
+    b.id = 'goalBanner'; b.className = 'goal-banner'; b.setAttribute('role', 'alert');
+    document.body.append(b);
+    b.addEventListener('click', () => { b.hidden = true; });
+  }
+  b.href = href;
+  b.classList.toggle('cancelled', !!cancelled);
+  b.innerHTML = `${logo ? img(logo) : ''}<div><b>${cancelled ? '' : '⚽ '}${esc(title)}</b><span>${esc(text)}</span></div>`;
+  b.hidden = false;
+  b.classList.remove('in'); void b.offsetWidth; b.classList.add('in');
+  try { navigator.vibrate?.([120, 60, 120]); } catch {}
+  clearTimeout(showGoalBanner._t);
+  showGoalBanner._t = setTimeout(() => { b.hidden = true; }, 10000);
+}
 
 function shortName(n) {
   const parts = String(n).split(' ');
@@ -1959,7 +2095,11 @@ document.addEventListener('keydown', e => {
     if (setLiveDay(liveState.offset + dir, dir)) e.preventDefault();
   }
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && currentView?.refresh) route({ silent: true }); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (currentView?.refresh) route({ silent: true });
+  watchFavorites();
+});
 window.addEventListener('hashchange', () => route());
 
 /* ---------- Init ---------- */
@@ -1976,6 +2116,15 @@ lightMq?.addEventListener?.('change', applySystemTheme);
 liveState.filter = store.get('fk.liveFilter', 'fav');
 favorites.forEach(f => { f.name = germanize(f.name || ''); });
 route();
+watchFavorites().then(() => {
+  // Testmodus mit &goal: beim ersten Testspiel ein Heimtor „nachspielen“, um das Banner zu sehen
+  if (!DEMO || !new URLSearchParams(location.search).has('goal')) return;
+  const id = DEMO.split(',')[0].split(':')[1];
+  const [h, a] = (lastScores.get(id) || '1:0').split(':').map(Number);
+  lastScores.set(id, `${Math.max(h - 1, 0)}:${a}`);
+  setTimeout(watchFavorites, 1500);
+});
+if (DEMO) window.__anpfiffDemo = { lastScores, watchFavorites };
 
 // Als App installierbar machen (PWA) – Service Worker für Offline-Start und schnelle Ladezeiten
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
