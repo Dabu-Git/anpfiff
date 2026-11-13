@@ -762,3 +762,30 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .hl-btn:hover { border-color: var(--accent); }
 .hl-btn.yt:hover { background: #cc1a12; border-color: #cc1a12; }
 @media (max-width: 760px) { .hl-strip { grid-auto-columns: 78%; } .hl-card { padding: 14px; } }
+
+/* ---------- Teams sortieren ---------- */
+.head-actions { display: flex; align-items: center; gap: 16px; white-space: nowrap; flex: none; }
+.section-head:has(.head-actions) h2 { white-space: nowrap; }
+@media (max-width: 760px) { .only-wide, .page-head .btn[data-action="sort-done"] { display: none; } }
+.link-btn svg { width: 15px; height: 15px; fill: currentColor; vertical-align: -3px; margin-right: 4px; }
+.sort-list { padding: 6px; margin-bottom: 18px; }
+.sort-row { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 4px; border-radius: 14px; background: var(--card); position: relative; -webkit-user-select: none; user-select: none; }
+.sort-row + .sort-row { border-top: 1px solid var(--line); }
+.sort-handle { width: 44px; height: 44px; display: grid; place-items: center; flex: none; cursor: grab; touch-action: none; color: var(--text-3); border-radius: 12px; }
+.sort-handle svg { width: 22px; height: 22px; fill: currentColor; pointer-events: none; }
+@media (hover: hover) { .sort-handle:hover { color: var(--text); background: var(--card-2); } }
+.sort-logo { width: 36px; height: 36px; object-fit: contain; flex: none; }
+.mini-badge.sort-logo { border-radius: 11px; font-size: 13px; }
+.sort-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sort-name b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sort-name small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sort-row .icon-btn { width: 40px; height: 40px; color: var(--text); }
+.sort-row .icon-btn svg { fill: currentColor; }
+.sort-row .icon-btn:disabled { opacity: .3; cursor: default; }
+.sort-row.dragging { z-index: 5; background: var(--card-2); box-shadow: 0 14px 34px -10px rgba(0,0,0,.55); border-top-color: transparent; }
+.sort-row.dragging + .sort-row { border-top-color: transparent; }
+.sort-row.dragging .sort-handle { cursor: grabbing; color: var(--accent); }
+body.sorting { cursor: grabbing; -webkit-user-select: none; user-select: none; }
+.grip-inline svg { width: 16px; height: 16px; fill: currentColor; vertical-align: -3px; }
+.btn.sort-done { width: 100%; justify-content: center; }
+@media (max-width: 760px) { .sort-row { gap: 10px; padding-right: 6px; } .sort-row .icon-btn { width: 38px; height: 38px; } }

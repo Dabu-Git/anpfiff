@@ -546,9 +546,12 @@ function greeting() {
   return h < 11 ? 'Guten Morgen' : h < 18 ? 'Hallo' : 'Guten Abend';
 }
 
+let homeSort = false;   // Startseite im Sortier-Modus?
+
 async function viewHome(_, { silent } = {}) {
   const app = $('#app');
-  if (!favorites.length) return renderOnboarding();
+  if (!favorites.length) { homeSort = false; return renderOnboarding(); }
+  if (homeSort) return renderSortList();
   if (!silent) app.innerHTML = skeleton('home');
   const token = renderToken;
 
@@ -643,6 +646,7 @@ async function viewHome(_, { silent } = {}) {
     </div>`;
   };
   const regionalCard = f => regionalCardHtml(f, rTableByLeague[f.league]);
+  const cardHtml = new Map(cards.map(c => [favKey(c.f.league, c.f.id), teamCard(c)]));
 
   const liveCard = e => {
     const [s, lg] = e.league.split('/');
@@ -663,8 +667,9 @@ async function viewHome(_, { silent } = {}) {
       <div class="live-strip">${liveGames.map(liveCard).join('')}</div></section>` : ''}
     <section class="section">
       <div class="section-head"><h2>Meine Teams <span class="count">${favorites.length}</span></h2>
-        <button class="link-btn" data-action="open-search">+ Team hinzufügen</button></div>
-      <div class="team-grid">${cards.map(teamCard).join('')}${regionalFavs.map(regionalCard).join('')}</div>
+        <span class="head-actions">${favorites.length > 1 ? `<button class="link-btn" data-action="sort-teams">${SORT_ICON}Sortieren</button>` : ''}
+          <button class="link-btn" data-action="open-search">+ Team<span class="only-wide"> hinzufügen</span></button></span></div>
+      <div class="team-grid">${favorites.map(f => isRegional(f.league) ? regionalCard(f) : (cardHtml.get(favKey(f.league, f.id)) || '')).join('')}</div>
     </section>
     <div class="cols">
       <section class="section"><div class="section-head"><h2>Letzte Ergebnisse</h2></div>
@@ -674,6 +679,108 @@ async function viewHome(_, { silent } = {}) {
     </div>
     ${transferHtml()}`;
 }
+
+/* ---------- Teams sortieren ----------
+ * Eigene, kompakte Liste: am Griff ziehen oder mit den Pfeilen verschieben.
+ * Die Reihenfolge der Favoriten bestimmt die Reihenfolge der Karten auf der Startseite. */
+const SORT_ICON = '<svg viewBox="0 0 24 24"><path d="M8 4l4 4H9v12H7V8H4l4-4zm8 16l-4-4h3V4h2v12h3l-4 4z"/></svg>';
+const GRIP_ICON = '<svg viewBox="0 0 24 24"><path d="M4 7h16v2H4zm0 4h16v2H4zm0 4h16v2H4z"/></svg>';
+function renderSortList() {
+  currentView.refresh = 0;
+  const row = (f, i) => {
+    const lg = leagueByKey[f.league] || regionalByKey[f.league];
+    return `<div class="sort-row" data-key="${esc(favKey(f.league, f.id))}">
+      <span class="sort-handle" title="Ziehen zum Verschieben" aria-hidden="true">${GRIP_ICON}</span>
+      ${f.logo ? img(f.logo, 'sort-logo') : `<span class="mini-badge sort-logo">${esc(initials(f.name))}</span>`}
+      <div class="sort-name"><b>${esc(f.name)}</b><small>${leagueFlag(f.league)} ${esc(lg?.name || '')}</small></div>
+      <button class="icon-btn" data-sort="up" aria-label="${esc(f.name)} nach oben" ${i === 0 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M12 7l7 7-1.4 1.4L12 9.8l-5.6 5.6L5 14z"/></svg></button>
+      <button class="icon-btn" data-sort="down" aria-label="${esc(f.name)} nach unten" ${i === favorites.length - 1 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M12 17l-7-7 1.4-1.4L12 14.2l5.6-5.6L19 10z"/></svg></button>
+    </div>`;
+  };
+  $('#app').innerHTML = `<div class="page-head"><div><h1>Teams sortieren</h1>
+      <p>Am Griff <span class="grip-inline">${GRIP_ICON}</span> ziehen oder mit den Pfeilen verschieben.</p></div>
+      <button class="btn" data-action="sort-done">Fertig</button></div>
+    <div class="card sort-list" id="sortList">${favorites.map(row).join('')}</div>
+    <button class="btn sort-done" data-action="sort-done">Fertig</button>`;
+}
+// Reihenfolge aus der Liste übernehmen und speichern
+function saveSortOrder() {
+  const order = [...document.querySelectorAll('#sortList .sort-row')].map(r => r.dataset.key);
+  const pos = new Map(order.map((k, i) => [k, i]));
+  favorites.sort((a, b) => (pos.get(favKey(a.league, a.id)) ?? 999) - (pos.get(favKey(b.league, b.id)) ?? 999));
+  store.set('fk.favorites', favorites);
+  snaps.clear();
+  // Pfeile am ersten/letzten Eintrag sperren
+  const rows = [...document.querySelectorAll('#sortList .sort-row')];
+  rows.forEach((r, i) => {
+    r.querySelector('[data-sort="up"]').disabled = i === 0;
+    r.querySelector('[data-sort="down"]').disabled = i === rows.length - 1;
+  });
+}
+function moveSortRow(row, dir) {
+  const other = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (!other) return;
+  // kurze Tausch-Animation: beide Zeilen gleiten an ihren neuen Platz
+  const a = row.getBoundingClientRect().top, b = other.getBoundingClientRect().top;
+  if (dir < 0) row.parentNode.insertBefore(row, other); else row.parentNode.insertBefore(other, row);
+  for (const [el, from] of [[row, a], [other, b]]) {
+    const d = from - el.getBoundingClientRect().top;
+    el.style.transition = 'none'; el.style.transform = `translateY(${d}px)`;
+    requestAnimationFrame(() => { el.style.transition = 'transform .18s ease'; el.style.transform = ''; });
+  }
+  saveSortOrder();
+}
+// Ziehen am Griff (Maus und Finger)
+let drag = null;
+function dragUpdate() {
+  if (!drag) return;
+  const { row } = drag;
+  let dy = drag.lastY + window.scrollY - drag.startY;
+  const prev = row.previousElementSibling, next = row.nextElementSibling;
+  if (prev && dy < -prev.offsetHeight / 2) { row.parentNode.insertBefore(row, prev); drag.startY -= prev.offsetHeight; dy += prev.offsetHeight; }
+  else if (next && dy > next.offsetHeight / 2) { row.parentNode.insertBefore(next, row); drag.startY += next.offsetHeight; dy -= next.offsetHeight; }
+  row.style.transform = `translateY(${Math.round(dy)}px)`;
+}
+function dragTick() {
+  if (!drag) return;
+  // am Bildschirmrand automatisch weiterscrollen
+  const y = drag.lastY, edge = 90;
+  if (y < edge + 60) window.scrollBy(0, -Math.ceil((edge + 60 - y) / 8));
+  else if (y > window.innerHeight - edge - 40) window.scrollBy(0, Math.ceil((y - (window.innerHeight - edge - 40)) / 8));
+  dragUpdate();
+  drag.raf = requestAnimationFrame(dragTick);
+}
+function dragEnd() {
+  if (!drag) return;
+  const { row } = drag;
+  cancelAnimationFrame(drag.raf);
+  drag = null;
+  row.style.transition = 'transform .15s ease';
+  row.style.transform = '';
+  row.classList.remove('dragging');
+  document.body.classList.remove('sorting');
+  setTimeout(() => { row.style.transition = ''; }, 180);
+  saveSortOrder();
+}
+document.addEventListener('pointerdown', e => {
+  const handle = e.target.closest?.('.sort-handle');
+  if (!handle || drag) return;
+  e.preventDefault();
+  const row = handle.closest('.sort-row');
+  drag = { row, id: e.pointerId, lastY: e.clientY, startY: e.clientY + window.scrollY };
+  try { handle.setPointerCapture(e.pointerId); } catch {}
+  row.style.transition = 'none';
+  row.classList.add('dragging');
+  document.body.classList.add('sorting');
+  drag.raf = requestAnimationFrame(dragTick);
+});
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  drag.lastY = e.clientY;
+  dragUpdate();
+});
+document.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) dragEnd(); });
+document.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.id) dragEnd(); });
 
 function shortName(n) {
   const parts = String(n).split(' ');
@@ -1720,7 +1827,7 @@ try { history.scrollRestoration = 'manual'; } catch {}
 // Fertig gerenderte Seite beim Verlassen merken
 function keepSnapshot() {
   const app = $('#app');
-  if (!shownHash || !currentView?.done || app.querySelector('.err, .spinner, .skel')) return;
+  if (!shownHash || !currentView?.done || app.querySelector('.err, .spinner, .skel, .sort-list')) return;
   snaps.delete(shownHash);
   snaps.set(shownHash, { html: app.innerHTML, y: window.scrollY, t: Date.now() });
   while (snaps.size > SNAP_MAX) snaps.delete(snaps.keys().next().value);
@@ -1741,6 +1848,7 @@ async function route({ silent = false } = {}) {
     renderToken++;
     if (hash !== shownHash) {
       keepSnapshot();
+      homeSort = false;
       snap = snaps.get(hash);
       if (snap && Date.now() - snap.t > SNAP_AGE) { snaps.delete(hash); snap = null; }
     }
@@ -1802,6 +1910,8 @@ document.addEventListener('click', ev => {
   }
   const tab = ev.target.closest('[data-tab]');
   if (tab) { selectTab(tab); return; }
+  const sortBtn = ev.target.closest('[data-sort]');
+  if (sortBtn) { moveSortRow(sortBtn.closest('.sort-row'), sortBtn.dataset.sort === 'up' ? -1 : 1); return; }
   const clip = ev.target.closest('[data-video]');
   if (clip) { playClip(clip); return; }
   const day = ev.target.closest('[data-day]');
@@ -1819,6 +1929,8 @@ document.addEventListener('click', ev => {
     else if (a === 'close-search') closeSearch();
     else if (a === 'back') { if (history.length > 1) history.back(); else { linkNavAt = Date.now(); location.hash = '#/'; } }
     else if (a === 'reload' || a === 'go-home') route();
+    else if (a === 'sort-teams') { homeSort = true; renderToken++; window.scrollTo({ top: 0 }); renderSortList(); }
+    else if (a === 'sort-done') { homeSort = false; route(); }
     else if (a === 'copy-favs') {
       const code = favCode();
       const fallback = () => { const i = $('#favCodeInput'); i.value = code; i.focus(); i.select(); $('#favMsg').textContent = 'Code markiert – jetzt kopieren und in der anderen App einfügen.'; };
