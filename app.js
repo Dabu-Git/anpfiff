@@ -1369,8 +1369,10 @@ const NOTE_DE = {
   'Knockout phase playoffs - seeded': 'Playoffs (gesetzt)', 'Knockout phase playoffs - unseeded': 'Playoffs (ungesetzt)', 'Promotion playoff': 'Aufstiegs-Relegation', 'Promotion playoffs': 'Aufstiegs-Relegation',
 };
 const legendHtml = items => items.length ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;font-size:12px;color:var(--text-2)">${items.map(([c, d]) => `<span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:3px;background:${esc(c)}"></i>${esc(NOTE_DE[d] || d)}</span>`).join('')}</div>` : '';
-function standingsTable(data, league, id) {
-  const groups = collectGroups(data);
+function standingsTable(data, league, id, opts = {}) {
+  const ids = (Array.isArray(id) ? id : [id]).filter(x => x != null).map(String);
+  let groups = collectGroups(data);
+  if (opts.onlyMine) { const mine = groups.filter(g => g.entries.some(e => ids.includes(String(e.team?.id)))); if (mine.length) groups = mine; }
   if (!groups.length) return '<div class="card empty-inline">Keine Tabelle verfügbar</div>';
   const sport = sportOf(league);
   const cols = sport === 'soccer'
@@ -1379,7 +1381,8 @@ function standingsTable(data, league, id) {
       ? [['gamesPlayed', 'Sp'], ['wins', 'S', true], ['losses', 'N', true], ['otLosses', 'OTN', true], ['pointDifferential', 'Diff'], ['points', 'Pkt']]
       : [['wins', 'S'], ['losses', 'N'], ['winPercent', 'Quote'], ['gamesBehind', 'GB', true], ['streak', 'Serie', true]];
   // Gruppe mit dem Team zuerst
-  groups.sort((a, b) => (b.entries.some(e => String(e.team?.id) === String(id)) - a.entries.some(e => String(e.team?.id) === String(id))));
+  const hasMe = g => g.entries.some(e => ids.includes(String(e.team?.id)));
+  groups.sort((a, b) => hasMe(b) - hasMe(a));
   const [sp, lg] = league.split('/');
   // Viele Gruppen (Nations League): Legende nur einmal unter allen Tabellen
   const sharedLegend = groups.length > 4;
@@ -1391,20 +1394,70 @@ function standingsTable(data, league, id) {
         if (n === '_goals') return `<td class="${mh ? 'mh' : ''}">${s('pointsFor')?.displayValue ?? '-'}:${s('pointsAgainst')?.displayValue ?? '-'}</td>`;
         return `<td class="${n === 'points' ? 'pts' : ''} ${mh ? 'mh' : ''}">${esc(s(n)?.displayValue ?? '-')}</td>`;
       }).join('');
-      const me = String(e.team?.id) === String(id);
+      const me = ids.includes(String(e.team?.id));
       const fav = !me && isFav(league, e.team?.id);
+      const li = opts.live?.get(String(e.team?.id));
+      const liveTag = li ? ` <span class="lt-live ${li.res}">${esc(li.score)}</span>${li.delta ? `<span class="lt-move ${li.delta > 0 ? 'up' : 'down'}">${li.delta > 0 ? '▲' : '▼'}${Math.abs(li.delta)}</span>` : ''}` : '';
       const note = e.note?.color ? `style="--note:${esc(e.note.color)}" title="${esc(e.note.description || '')}"` : '';
       return `<tr class="${me ? 'me' : ''} ${fav ? 'fav' : ''} clickable" data-href="#/team/${sp}/${lg}/${e.team?.id}">
         <td class="rank l" ${note}>${i + 1}</td>
-        <td class="l"><div class="tm">${img(logoOf(e.team))}${esc(e.team?.shortDisplayName || e.team?.displayName)}${fav ? ' <span class="fav-mark">★</span>' : ''}</div></td>${cells}</tr>`;
+        <td class="l"><div class="tm">${img(logoOf(e.team))}${esc(e.team?.shortDisplayName || e.team?.displayName)}${fav ? ' <span class="fav-mark">★</span>' : ''}${liveTag}</div></td>${cells}</tr>`;
     }).join('');
     const legend = sharedLegend ? [] : legendOf(g.entries);
     return `<div class="card section">${groups.length > 1 ? `<div class="group-title">${esc(g.name || '')}</div>` : ''}
       <div class="table-wrap"><table class="standings"><thead><tr><th class="l">#</th><th class="l">Team</th>${cols.map(c => `<th class="${c[2] ? 'mh' : ''}">${c[1]}</th>`).join('')}</tr></thead>
-      <tbody>${rows}</tbody></table></div>
+      <tbody>${rows}</tbody></table></div>${opts.note ? `<p class="lt-note">${opts.note}</p>` : ''}
       ${legendHtml(legend)}
     </div>`;
   }).join('') + (sharedLegend ? `<div class="card section">${legendHtml(legendOf(groups.flatMap(g => g.entries)))}</div>` : '');
+}
+
+/* Live-Tabelle (Fußball): ESPN rechnet die Tabelle erst nach Abpfiff neu. Laufende Spiele der Liga
+ * werden hier so eingerechnet, als wäre jetzt Schluss – mit Punkten, Toren und Platzveränderung. */
+function liveStandings(data, liveGames) {
+  const clone = structuredClone(data);
+  const info = new Map();
+  const v = (e, n) => Number(e.stats?.find(s => s.name === n)?.value) || 0;
+  const set = (e, n, val, disp = String(val)) => {
+    e.stats = e.stats || [];
+    const s = e.stats.find(x => x.name === n);
+    if (s) { s.value = val; s.displayValue = disp; } else e.stats.push({ name: n, value: val, displayValue: disp });
+  };
+  let applied = 0;
+  for (const g of collectGroups(clone)) {
+    const before = sortEntries(g.entries).map(e => String(e.team?.id));
+    const byId = new Map(g.entries.map(e => [String(e.team?.id), e]));
+    let touched = false;
+    for (const ev of liveGames) {
+      const h = byId.get(String(ev.home.id)), w = byId.get(String(ev.away.id));
+      if (!h || !w) continue;
+      touched = true; applied++;
+      const hs = Number(ev.home.score) || 0, as = Number(ev.away.score) || 0;
+      for (const [e, f, ag] of [[h, hs, as], [w, as, hs]]) {
+        const res = f > ag ? 'w' : f < ag ? 'l' : 'd';
+        const pf = v(e, 'pointsFor') + f, pa = v(e, 'pointsAgainst') + ag, diff = pf - pa;
+        set(e, 'gamesPlayed', v(e, 'gamesPlayed') + 1);
+        if (res === 'w') set(e, 'wins', v(e, 'wins') + 1);
+        else if (res === 'd') set(e, 'ties', v(e, 'ties') + 1);
+        else set(e, 'losses', v(e, 'losses') + 1);
+        set(e, 'pointsFor', pf); set(e, 'pointsAgainst', pa);
+        set(e, 'pointDifferential', diff, diff > 0 ? `+${diff}` : String(diff));
+        set(e, 'points', v(e, 'points') + (res === 'w' ? 3 : res === 'd' ? 1 : 0));
+        info.set(String(e.team?.id), { score: `${f}:${ag}`, res });
+      }
+    }
+    if (!touched) continue;
+    const pos = id => before.indexOf(id);
+    const after = [...g.entries].sort((x, y) => v(y, 'points') - v(x, 'points') || v(y, 'pointDifferential') - v(x, 'pointDifferential')
+      || v(y, 'pointsFor') - v(x, 'pointsFor') || pos(String(x.team?.id)) - pos(String(y.team?.id)));
+    after.forEach((e, i) => {
+      const id = String(e.team?.id);
+      set(e, 'rank', i + 1);
+      const li = info.get(id);
+      if (li) li.delta = pos(id) - i, li.pos = i + 1;
+    });
+  }
+  return { data: clone, info, applied };
 }
 
 /* ---------- Tabellen ---------- */
@@ -1576,7 +1629,12 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
   const app = $('#app');
   if (!silent) app.innerHTML = skeleton();
   const token = renderToken;
-  const sum = await safe(loadSummary(league, eventId, 15000));
+  const hasTable = !!leagueByKey[league];
+  const [sum, standings, board] = await Promise.all([
+    safe(loadSummary(league, eventId, 15000)),
+    hasTable ? safe(get(`${API2}/${league}/standings`, 300000)) : null,
+    hasTable && sport === 'soccer' ? safe(loadScoreboard(league)) : null,
+  ]);
   if (token !== renderToken) return;
   if (!sum?.header) {
     app.innerHTML = `<button class="back" data-action="back">${BACK} Zurück</button><div class="err">Spieldaten konnten nicht geladen werden.</div>`;
@@ -1584,6 +1642,8 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
   }
   const comp = sum.header.competitions?.[0] || {};
   const e = normEvent({ id: eventId, date: comp.date, competitions: [comp] }, league);
+  // Lokaler Testmodus: beendete Spiele als laufend behandeln
+  if (DEMO?.split(',').includes(`${league}:${eventId}`)) Object.assign(e, { state: 'in', completed: false });
   const live = e.state === 'in', pre = e.state === 'pre';
   currentView.refresh = live ? 20000 : 0;
   const isSoccer = sport === 'soccer';
@@ -1591,6 +1651,27 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
   const homeTeam = comp.competitors?.find(c => c.homeAway === 'home')?.team || {};
   const awayTeam = comp.competitors?.find(c => c.homeAway === 'away')?.team || {};
   const goals = isSoccer ? goalsFromSummary(sum) : [];
+
+  // Tabelle: nur wenn mindestens eines der Teams darin steht (nicht bei K.-o.-Spielen im Pokal)
+  let tableHtml = '', tableName = 'Tabelle', posLine = '';
+  const inTable = standings && (findStandingEntry(standings, H.id) || findStandingEntry(standings, A.id));
+  if (inTable) {
+    const ids = [H.id, A.id];
+    if (isSoccer && live) {
+      // Dieses Spiel mit dem frischesten Stand aus der Spielzusammenfassung, dazu alle anderen laufenden Spiele
+      const others = [...(board || []), ...(DEMO ? (await demoEvents()).filter(x => x.league === league) : [])]
+        .filter(x => x.state === 'in' && String(x.id) !== String(eventId));
+      const lt = liveStandings(standings, [e, ...others]);
+      const n = others.filter(x => lt.info.has(String(x.home.id))).length;
+      tableName = 'Live-Tabelle';
+      tableHtml = standingsTable(lt.data, league, ids, { onlyMine: true, live: lt.info,
+        note: `<span class="live-dot"></span>Stand jetzt – dieses Spiel${n ? ` und ${n} weitere${n === 1 ? 's' : ''} laufende${n === 1 ? 's' : ''} Spiel${n === 1 ? '' : 'e'}` : ''} eingerechnet, als wäre jetzt Abpfiff.` });
+      const p = t => { const li = lt.info.get(String(t.id)); return li ? `${esc(t.abbr || t.name)} Platz ${li.pos}${li.delta ? ` <span class="lt-move ${li.delta > 0 ? 'up' : 'down'}">${li.delta > 0 ? '▲' : '▼'}${Math.abs(li.delta)}</span>` : ''}` : ''; };
+      posLine = [p(H), p(A)].filter(Boolean).join(' · ');
+    } else {
+      tableHtml = standingsTable(standings, league, ids, { onlyMine: true });
+    }
+  }
 
   const scorersBlock = goals.length ? `<div class="sh-scorers">
       <div class="h">${goals.filter(g => g.teamId === H.id).map(g => `<span>${esc(shortName(g.player))} ${esc(g.min)}${g.pen ? ' (E)' : ''}${g.og ? ' (ET)' : ''} ⚽</span>`).join('')}</div>
@@ -1606,7 +1687,8 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
       <div>${pre ? `<div class="sh-score pre">${timeOf(e.date)}</div>` : `<div class="sh-score" style="${live ? 'color:var(--live)' : ''}">${esc(H.score ?? 0)}<span class="sep">:</span>${esc(A.score ?? 0)}</div>`}
         <div class="sh-status">${statusLine}</div></div>
       <div class="sh-team" data-href="#/team/${sport}/${lg}/${A.id}">${img(A.logo)}<div class="nm">${esc(A.name)}</div>${A.record && !isSoccer ? `<div class="rec">${esc(A.record)}</div>` : ''}</div>
-    </div>${scorersBlock}</div>`;
+    </div>${scorersBlock}
+    ${posLine ? `<button class="sh-table" type="button" data-action="show-table">${TABLE_ICON}<span>Live-Tabelle: ${posLine}</span></button>` : ''}</div>`;
 
   // Verlauf
   let timeline = '';
@@ -1628,9 +1710,11 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
   const timelineName = { soccer: 'Spielverlauf', hockey: 'Tore', baseball: 'Runs', football: 'Punkte' }[sport];
   const tabs = [
     ...(timelineName ? [['timeline', timelineName]] : []),
+    ...(tableHtml && live ? [['table', tableName]] : []),
     ['stats', 'Statistik'],
     ['lineups', isSoccer ? 'Aufstellung' : 'Top-Spieler'],
     ['info', 'Infos'],
+    ...(tableHtml && !live ? [['table', tableName]] : []),
   ];
   const saved = gameTabs[eventId];
   const tab = tabs.some(([k]) => k === saved) ? saved : pre ? 'info' : tabs[0][0];
@@ -1645,6 +1729,7 @@ async function viewGame([sport, lg, eventId], { silent } = {}) {
     <div class="tab-panel ${tab === 'stats' ? 'on' : ''}" data-panel="stats">${stats || `<div class="card empty-inline">${pre ? 'Statistiken gibt es ab Anpfiff.' : 'Keine Statistiken verfügbar.'}</div>`}</div>
     <div class="tab-panel ${tab === 'lineups' ? 'on' : ''}" data-panel="lineups">${lineups || '<div class="card empty-inline">Noch keine Daten verfügbar.</div>'}</div>
     <div class="tab-panel ${tab === 'info' ? 'on' : ''}" data-panel="info">${info}</div>
+    ${tableHtml ? `<div class="tab-panel ${tab === 'table' ? 'on' : ''}" data-panel="table">${tableHtml}</div>` : ''}
     ${live ? `<p class="updated" style="justify-content:center;margin-top:20px">Live – aktualisiert alle 20 s · zuletzt ${timeOf(new Date())}</p>` : ''}`;
 }
 
@@ -2067,6 +2152,10 @@ document.addEventListener('click', ev => {
     else if (a === 'reload' || a === 'go-home') route();
     else if (a === 'sort-teams') { homeSort = true; renderToken++; window.scrollTo({ top: 0 }); renderSortList(); }
     else if (a === 'sort-done') { homeSort = false; route(); }
+    else if (a === 'show-table') {
+      const t = $('#app .tab[data-tab="table"]');
+      if (t) { selectTab(t); const head = $('.topbar')?.offsetHeight || 0; window.scrollTo({ top: window.scrollY + t.getBoundingClientRect().top - head - 12, behavior: 'smooth' }); }
+    }
     else if (a === 'copy-favs') {
       const code = favCode();
       const fallback = () => { const i = $('#favCodeInput'); i.value = code; i.focus(); i.select(); $('#favMsg').textContent = 'Code markiert – jetzt kopieren und in der anderen App einfügen.'; };
